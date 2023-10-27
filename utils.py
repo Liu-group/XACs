@@ -56,7 +56,6 @@ def get_model_args(args):
     """
     model_args = inspect.getfullargspec(GNN.__init__).args
     model_args.remove('self')
-    model_args.remove('args')
     return model_args
 
 def load_checkpoint(current_args: Namespace):
@@ -78,7 +77,13 @@ def load_checkpoint(current_args: Namespace):
     else:
         current_args = args
     # Build model
-    model = GNN(args=current_args)
+    model = GNN(num_node_features=current_args.num_node_features, 
+                    num_edge_features=current_args.num_edge_features,
+                    num_classes=current_args.num_classes,
+                    conv_name=current_args.conv_name,
+                    num_layers=current_args.num_layers,
+                    hidden_dim=current_args.hidden_dim,
+                    dropout_rate=current_args.dropout_rate,)
     model.load_state_dict(model_state_dict)
 
     return model

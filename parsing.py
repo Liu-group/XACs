@@ -6,13 +6,13 @@ def get_args():
     parser.add_argument("--seed", type=int, default=42, help="seed")
     parser.add_argument("--gpu", type=int, default=None, help="cuda")
     parser.add_argument('--save_dir', type=str, help='Path where results will be saved')
-    parser.add_argument('--save_checkpoints', type=bool, default=False)
+    parser.add_argument('--save_checkpoints', type=bool, default=True)
     parser.add_argument('--checkpoint_path', type=str, help='model path')
 
     parser.add_argument('--data_path', type=str, default='QSAR_ACs')
-    parser.add_argument('--dataset', type=str, default='CHEMBL219_Ki')
+    parser.add_argument('--dataset', type=str, default='CHEMBL2835_Ki')
     parser.add_argument('--threshold', type=float, default=0.90, help='threshold for similarity')
-    parser.add_argument('--mode', type=str, default='cross_validation', help='cross_validation or train_test')
+    parser.add_argument('--mode', type=str, default='test', help='cross_validation or train_test')
     # cross validation
     parser.add_argument('--num_folds', type=int, default=10)
     parser.add_argument('--save_fold', type=bool, default=False)
@@ -24,6 +24,7 @@ def get_args():
     parser.add_argument('--conv_name', type=str, default='nn')
     parser.add_argument('--num_layers', type=int, default=3)
     parser.add_argument('--hidden_dim', type=int, default=50)
+    parser.add_argument('--pool', type=str, default='mean')
     parser.add_argument('--dropout_rate', type=float, default=0.5)
 
     parser.add_argument('--metric', type=str, default='rmse')
@@ -35,12 +36,12 @@ def get_args():
     parser.add_argument('--weight_decay', type=float, default=0)
     parser.add_argument('--opt_goal', type=str, default='MSE')
     parser.add_argument(
-        "--loss", type=str, default="MSE+direction", help="Type of loss for training GNN."
+        "--loss", type=str, default="MSE", help="Type of loss for training GNN."
     ) # ['MSE', 'MSE+att', 'MSE+att+sparsity', 'MSE+sparsity', 'MSE+direction', 'MSE+direction+sparsity']
     parser.add_argument('--att_loss_weight', type=float, default=0)
     parser.add_argument('--sparsity_loss_weight', type=float, default=0.01)
     parser.add_argument('--norm', type=int, default=1)
-    parser.add_argument('--direction_loss_weight', type=float, default=0.1)
+    parser.add_argument('--direction_loss_weight', type=float, default=1)
     parser.add_argument('--show_direction_loss', type=bool, default=True)
 
     parser.add_argument('--att_method', type=str, default='GradCAM')

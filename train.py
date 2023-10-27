@@ -183,7 +183,7 @@ def train(args, model, train_loader, batched_train_loader, loss_func, optimizer)
             row_cond = condition.all(1)           
             ### attribution ####
             model.eval()
-            explain_method = GraphLayerGradCam(model, model.convs[-1])
+            explain_method = GraphLayerGradCam(model, model.convs[-3])
             att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, batched_batch), return_gradients=args.return_gradients)
             att = att.reshape(-1, 1)
             ### sparsity ####
@@ -265,7 +265,7 @@ def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func
                 batched_batch = batched_data.batch.to(device)
                 
                 ### attribution ####
-                explain_method = GraphLayerGradCam(model, model.convs[-1])
+                explain_method = GraphLayerGradCam(model, model.convs[-3])
                 att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, batched_batch), return_gradients=args.return_gradients)
                 att = att.reshape(-1, 1)
                 ####################            
