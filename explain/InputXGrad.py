@@ -11,6 +11,7 @@ from captum._utils.common import (
     _format_inputs,
     _is_tuple,
 )
+from explain_utils import compute_gradients
 import torch
 from torch import Tensor
 
@@ -18,8 +19,10 @@ from torch import Tensor
 
 
 class InputXGradient(GradientAttribution):
-    def __init__(self, forward_func: Callable):
+    def __init__(self, forward_func: Callable, training: bool = False):
         GradientAttribution.__init__(self, forward_func)
+        if training:
+            self.gradient_func = compute_gradients
 
     def attribute(
             self,
@@ -40,9 +43,15 @@ class InputXGradient(GradientAttribution):
             target,
             additional_forward_args,
         )
-        attributions = tuple(
+        '''attributions = tuple(
             input * gradient for input, gradient in zip(inputs, gradients)
         )
+        attributions = tuple(
+            torch.einsum("ij, ij -> i", input, gradient) for input, gradient in zip(inputs, gradients)
+        )'''
+        node_weights = torch.einsum("ij, ij -> i", inputs[0][:, :11], gradients[0][:, :11])
+        return node_weights
+
         undo_gradient_requirements(inputs, gradient_mask)
         return attributions if _is_tuple(inputs) else attributions[0]
         
