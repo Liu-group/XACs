@@ -42,12 +42,12 @@ class MoleculeDataset:
 
         self.smiles_all = df['smiles'].tolist()
         self.y_all = df['y'].tolist()
+        self.featurize_data()
 
         self.x_train = None
         self.x_test = None
 
     def cliff_split_train_test(self, 
-                               dict_path: str = None,
                                test_size: float = 0.2, 
                                n_clusters: int = 5, 
                                seed: int = 42, 
@@ -56,9 +56,6 @@ class MoleculeDataset:
         """ 
         Split data into train/test according to activity cliffs.
         """
-        self.cliff = ActivityCliffs(self.smiles_all, self.y_all, threshold=threshold, dict_path=dict_path)
-        self.cliff_mols = self.cliff.cliff_mols
-
         # Perform spectral clustering on a tanimoto distance matrix
         spectral = SpectralClustering(n_clusters=n_clusters, random_state=seed, affinity='precomputed')
         clusters = spectral.fit(get_tanimoto_matrix(self.smiles_all)).labels_
@@ -103,10 +100,9 @@ class MoleculeDataset:
 
     def featurize_data(self):
         featurizer = MolTensorizer()
-        self.x_train = [featurizer.tensorize(smi) for smi in tqdm(self.smiles_train)]
-        self.x_test = [featurizer.tensorize(smi) for smi in tqdm(self.smiles_test)]
-        self.num_node_features = self.x_train[0].x.size(1)
-        self.num_edge_features = self.x_train[0].edge_attr.size(1)
+        self.x_all = [featurizer.tensorize(smi) for smi in tqdm(self.smiles_all)]
+        self.num_node_features = self.x_all[0].num_node_features
+        self.num_edge_features = self.x_all[0].num_edge_features
     
     def get_simple_cliff_labels(self):
         label_dir = os.path.join(WORKING_DIR, self.dataset_name, 'att_train.pt') 
@@ -212,30 +208,27 @@ class MoleculeDataset:
         dict_path = os.path.join(WORKING_DIR, self.dataset_name, f'mcs_dict_{threshold}_real_clean.pkl')
         split_path = os.path.join(self.working_path, f"{self.dataset_name}_cliff_thre_{threshold}_split_{seed}.csv")
         
+        self.cliff = ActivityCliffs(self.smiles_all, self.y_all, threshold=threshold, dict_path=dict_path)
+        self.cliff_mols = self.cliff.cliff_mols
+        
         if os.path.exists(split_path):
             df = pd.read_csv(split_path)
-            self.cliff = ActivityCliffs(self.smiles_all, self.y_all, threshold=threshold, dict_path=dict_path)
-            self.smiles_train = df[df['split'] == 'train']['smiles'].tolist()
-            self.y_train = df[df['split'] == 'train']['y'].tolist()
-            self.cliff_mols_train = df[df['split'] == 'train']['cliff_mol'].tolist()
-
-            self.smiles_test = df[df['split'] == 'test']['smiles'].tolist()
-            self.y_test = df[df['split'] == 'test']['y'].tolist()
-            self.cliff_mols_test = df[df['split'] == 'test']['cliff_mol'].tolist()     
-        else:       
+            train_idx, test_idx = df[df['split'] == 'train'].index.tolist(), df[df['split'] == 'test'].index.tolist() 
+        else:   
+            self.cliff_mols = self.cliff.cliff_mols    
             train_idx, test_idx = self.cliff_split_train_test(
-                                            dict_path = dict_path,
                                             seed = seed, 
                                             threshold = threshold,
                                             save_split = save_split)
-            self.smiles_train = [self.smiles_all[i] for i in train_idx]
-            self.smiles_test = [self.smiles_all[i] for i in test_idx]
-            self.y_train = [self.y_all[i] for i in train_idx]
-            self.y_test = [self.y_all[i] for i in test_idx]
-            self.cliff_mols_train = [self.cliff_mols[i] for i in train_idx]
-            self.cliff_mols_test = [self.cliff_mols[i] for i in test_idx]
-        
-        self.featurize_data()
+            
+        self.cliff_mols_train = [self.cliff_mols[i] for i in train_idx]
+        self.cliff_mols_test = [self.cliff_mols[i] for i in test_idx]
+        self.smiles_train = [self.smiles_all[i] for i in train_idx]
+        self.smiles_test = [self.smiles_all[i] for i in test_idx]
+        self.y_train = [self.y_all[i] for i in train_idx]
+        self.y_test = [self.y_all[i] for i in test_idx]
+        self.x_train = [self.x_all[i] for i in train_idx]
+        self.x_test = [self.x_all[i] for i in test_idx]
         self.cliff_dict = deepcopy(self.cliff.mcs_dict)
         #self.get_simple_cliff_labels()
         self.conca_data_cliff()

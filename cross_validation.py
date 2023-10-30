@@ -24,8 +24,8 @@ def cross_validate(args, data: MoleculeDataset):
             args.save_dir = os.path.join(save_dir, f'fold_{fold_num}')
             makedirs(args.save_dir, exist_ok=True)
         data(seed=args.seed, threshold=threshold, save_split = True, concat=args.show_direction_loss)
-        model = GNN(num_node_features=data.num_node_features, 
-                    num_edge_features=data.num_edge_features,
+        model = GNN(num_node_features=args.num_node_features, 
+                    num_edge_features=args.num_edge_features,
                     num_classes=args.num_classes,
                     conv_name=args.conv_name,
                     num_layers=args.num_layers,

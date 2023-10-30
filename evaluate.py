@@ -2,6 +2,7 @@ import torch
 from rf_utils import diff_mask
 from featurization import MolTensorizer
 from explain.GradCAM import GraphLayerGradCam
+from explain.InputXGrad import InputXGradient
 import numpy as np
 from utils import pairwise_ranking_loss
 from dataset import MoleculeDataset
@@ -11,9 +12,15 @@ def get_one_smiles_att(model, smiles) -> torch.Tensor:
     data = featurizer.tensorize(smiles)
     model.eval()
     with torch.no_grad():
-        explain_method = GraphLayerGradCam(model, model.convs[-1])
-        att = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
-        att = att.reshape(-1, 1)
+        #explain_method = GraphLayerGradCam(model, model.convs[0])
+        explain_method = InputXGradient(model)
+        node_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
+        '''for idx in range(data.num_edges):
+            e_imp = edge_weights[idx]
+            node_weights[data.edge_index[0, idx]] += e_imp / 2
+            node_weights[data.edge_index[1, idx]] += e_imp / 2'''
+        print(node_weights.shape)
+        att = node_weights.cpu().reshape(-1, 1)
     return att
 
 def evaluate_gnn_explain_direction(data: MoleculeDataset, model):
