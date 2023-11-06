@@ -55,6 +55,21 @@ if __name__ == '__main__':
         if args.checkpoint_path is None:
             args.checkpoint_path = os.path.join(args.save_dir, f'{args.loss}_model.pt')
         model = load_checkpoint(args)
+        data_test = data.data_test
+        from torch_geometric.loader import DataLoader
+        loss_func = torch.nn.MSELoss()
+        from metrics import get_metric_func
+        metric_func = get_metric_func(metric=args.metric)
+        test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
+        from train import predict
+        test_score, test_cliff_score  = predict(args, model, test_loader, loss_func, metric_func)
+
+        if args.contrast2rf:
+            print("Running Random Forest...")
+            model_rf, rf_test_score, rf_test_cliff_score = train_test_rf(args, data)
+            
+
+            rf_score = evaluate_rf_explain_direction(data, model_rf)
         print("Testing explainability...")
         gnn_score = evaluate_gnn_explain_direction(data, model)
         

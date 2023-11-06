@@ -59,8 +59,8 @@ class GNN(torch.nn.Module):
                 conv = NNConv(
                     self.hidden_dim,
                     self.hidden_dim,
-                    nn=Sequential('x', [
-                        (Lin(2*self.num_edge_features, self.hidden_dim * self.hidden_dim), 'x -> x'),
+                    nn=Sequential('edge_attr', [
+                        (Lin(2*self.num_edge_features, self.hidden_dim * self.hidden_dim), 'edge_attr -> edge_attr'),
                         ]),
                 )
             elif self.conv_name == "gine":
