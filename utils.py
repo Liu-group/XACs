@@ -11,7 +11,6 @@ from dataset import MoleculeDataset
 from cliffs import ActivityCliffs, get_tanimoto_matrix
 from sklearn.cluster import SpectralClustering
 from GNN import GNN
-torch.set_default_tensor_type(torch.DoubleTensor)
 
 
 def set_seed(seed):

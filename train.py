@@ -89,7 +89,7 @@ def run_training(args: Namespace,
     loss_func = torch.nn.MSELoss()
     metric_func = get_metric_func(metric=args.metric)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.9, patience=5, min_lr=args.lr/20.0)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.9, patience=10, min_lr=args.lr/20.0)
 
     best_score = float('inf') if args.minimize_score else -float('inf')
 

@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('--num_folds', type=int, default=10)
     parser.add_argument('--save_fold', type=bool, default=False)
     parser.add_argument('--show_individual_scores', type=bool, default=True)
-    parser.add_argument('--contrast2rf', type=bool, default=False)
+    parser.add_argument('--contrast2rf', type=bool, default=True)
     # training
     parser.add_argument('--split', type=list, default=[0.64, 0.16, 0.2])
     parser.add_argument('--num_classes', type=int, default=1)
