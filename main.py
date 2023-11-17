@@ -70,7 +70,7 @@ if __name__ == '__main__':
             
 
             rf_score = evaluate_rf_explain_direction(data, model_rf)
-        print("Testing explainability...")
+        print("Testing GNN Explainability...")
         gnn_score = evaluate_gnn_explain_direction(data, model)
         
     

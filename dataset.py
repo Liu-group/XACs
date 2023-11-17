@@ -8,7 +8,7 @@ import random
 from typing import List, Union
 from cliffs import ActivityCliffs
 from copy import deepcopy
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import SpectralClustering
 from cliffs import ActivityCliffs, get_tanimoto_matrix
@@ -43,9 +43,6 @@ class MoleculeDataset:
         self.smiles_all = df['smiles'].tolist()
         self.y_all = df['y'].tolist()
         self.featurize_data()
-
-        self.x_train = None
-        self.x_test = None
 
     def cliff_split_train_test(self, 
                                test_size: float = 0.2, 
@@ -100,9 +97,9 @@ class MoleculeDataset:
 
     def featurize_data(self):
         featurizer = MolTensorizer()
-        self.x_all = [featurizer.tensorize(smi) for smi in tqdm(self.smiles_all)]
-        self.num_node_features = self.x_all[0].num_node_features
-        self.num_edge_features = self.x_all[0].num_edge_features
+        self.data_all = [featurizer.tensorize(smi) for smi in tqdm(self.smiles_all)]
+        self.num_node_features = self.data_all[0].num_node_features
+        self.num_edge_features = self.data_all[0].num_edge_features
     
     def get_simple_cliff_labels(self):
         label_dir = os.path.join(WORKING_DIR, self.dataset_name, 'att_train.pt') 
@@ -111,22 +108,12 @@ class MoleculeDataset:
         att_train = ac_train.get_all_cliff_attributions()
         self.att_train = [torch.tensor(np.array(att)) for att in att_train]
     
-
     def conca_data(self):
-        # concatenate the train and test data not including the cliff info
-        data_train = deepcopy(self.x_train)
-        for i in range(len(data_train)):
-            data_train[i].smiles = self.smiles_train[i]
-            data_train[i].target = self.y_train[i]
-            data_train[i].cliff = self.cliff_mols_train[i]
-        self.data_train = data_train
-        data_test = deepcopy(self.x_test)
-        for i in range(len(data_test)):
-            data_test[i].smiles = self.smiles_test[i]
-            data_test[i].target = self.y_test[i]
-            data_test[i].cliff = self.cliff_mols_test[i]
-
-        self.data_test = data_test      
+        # concatenate data with smiles, target and whether or not cliff_mol.
+        for i in range(len(self.data_all)):
+            self.data_all[i].smiles = self.smiles_all[i]
+            self.data_all[i].target = self.y_all[i]
+            self.data_all[i].cliff = self.cliff_mols[i]
 
     def conca_data_cliff(self):
         batched_data_train = deepcopy(self.x_train)
@@ -210,7 +197,7 @@ class MoleculeDataset:
         
         self.cliff = ActivityCliffs(self.smiles_all, self.y_all, threshold=threshold, dict_path=dict_path)
         self.cliff_mols = self.cliff.cliff_mols
-        
+        self.conca_data()
         if os.path.exists(split_path):
             df = pd.read_csv(split_path)
             train_idx, test_idx = df[df['split'] == 'train'].index.tolist(), df[df['split'] == 'test'].index.tolist() 
@@ -221,18 +208,16 @@ class MoleculeDataset:
                                             threshold = threshold,
                                             save_split = save_split)
             
-        self.cliff_mols_train = [self.cliff_mols[i] for i in train_idx]
-        self.cliff_mols_test = [self.cliff_mols[i] for i in test_idx]
-        self.smiles_train = [self.smiles_all[i] for i in train_idx]
-        self.smiles_test = [self.smiles_all[i] for i in test_idx]
-        self.y_train = [self.y_all[i] for i in train_idx]
-        self.y_test = [self.y_all[i] for i in test_idx]
-        self.x_train = [self.x_all[i] for i in train_idx]
-        self.x_test = [self.x_all[i] for i in test_idx]
+        data_train = [self.data_all[i] for i in train_idx]
+        data_test = [self.data_all[i] for i in test_idx]
         self.cliff_dict = deepcopy(self.cliff.mcs_dict)
-        #self.get_simple_cliff_labels()
-        self.conca_data_cliff()
-        self.conca_data()
+        self.batched_data_train = pack_data(data_train, self.cliff_dict)
+        self.data_train = data_train
+        # mols in test set is searched within the whole dataset for cliff pairs
+        data_all = pack_data(self.data_all, self.cliff_dict)
+        self.batched_data_test = [data_all[i] for i in test_idx]
+        self.data_test = [self.data_all[i] for i in test_idx]
+
 
     def __repr__(self):
         return f"Data object with molecules as: {len(self.y_train)} train/{len(self.y_test)} test"
@@ -261,6 +246,76 @@ def get_test_cliff(y_test_pred: Union[List[float], np.array],
     y_test_cliff_mols = y_test[cliff_test_idx]
 
     return y_pred_cliff_mols, y_test_cliff_mols
+
+def pack_data(data: Data, cliff_dict: dict) -> Data:
+    """
+    Shape data.x from (num_node_of_mol_i, num_node_features) to (sum(num_node_of_mol_i, num_node_of_cliff_mol), num_node_features);
+    data.edge_index and data.edge_attr are transformed into several disconnected graphs using Batch;
+
+    atom_mask = [atom_mask_i, atom_mask_j] with shape (max_num_cliff_pairs_in_list, num_atom_i)
+    e.g. 
+    max_num_cliff_pairs_in_list = 3;
+    molecule_i has 2 cliff pair: molecule_j and molecule_k;
+    atom_mask_i = [[1, 1, 1, 0, 0, 0],
+                   [0, 1, 1, 0, 0, 0],
+                   [0, 0, 0, 0, 0, 0]] 
+    meaning the first 3 atoms are the target attribution substrucutre of molecule i corresponding to the first cliff pair,
+    the 2rd and 3rd atoms are the target attribution substrucutre of molecule i corresponding to the second cliff pair;
+    atom_mask_j = [[-1, -1, -1, 0],
+                   [ 0,  0,  0, 0],
+                   [ 0,  0,  0, 0]]
+    atom_mask_k = [[0,  0, 0, 0,  0, 0],
+                   [0, -1, 0, 0, -1, 0],
+                   [0,  0, 0, 0,  0, 0]]
+    meaning the first 3 atoms are the target attribution substrucutre of molecule j;
+    the 2rd and 5th atoms are the target attribution substrucutre of molecule k;
+    atom_mask = [[1, 1, 1, 0, 0, 0, -1, -1, -1, 0, 0,  0, 0, 0,  0, 0],
+                 [0, 1, 1, 0, 0, 0,  0,  0,  0, 0, 0, -1, 0, 0, -1, 0],
+                 [0, 0, 0, 0, 0, 0,  0,  0,  0, 0, 0,  0, 0, 0,  0, 0]] 
+    """
+    smiles = [data[i].smiles for i in range(len(data))]
+    packed_data = deepcopy(data)
+
+    # Iterate through the values in the dictionary to check the maximum number of mmp for one molecule
+    max_length = 1
+    for value in cliff_dict.values():
+        if len(value) > max_length:
+            max_length = len(value) - 1
+
+    for i in range(len(packed_data)):
+        smiles_i = str(smiles[i])
+        num_atom_i = packed_data[i].x.size(0)
+        # get the valid mmps that are in the train smiles list
+        mmps = cliff_dict[smiles_i][1:]
+        available_mmps = [mmp_dict for mmp_dict in mmps if mmp_dict['smiles'] in smiles]
+        num_av_mmp = len(available_mmps)
+
+        potency_diff = torch.zeros(max_length, 1)
+        if num_av_mmp == 0:
+            atom_mask = torch.zeros(max_length, num_atom_i)
+        else:
+            mmp_data_list = [packed_data[i]]
+            atom_mask_i = torch.zeros(max_length, num_atom_i)
+            for j, mmp in enumerate(available_mmps):
+                atom_mask_i[j] = torch.tensor(mmp['atom_mask_i']).reshape(1, num_atom_i)
+            atom_mask = atom_mask_i
+            for j, mmp in enumerate(available_mmps):
+                j_idx = smiles.index(mmp['smiles'])
+                num_atom_j = len(mmp['atom_mask_j'])
+                atom_mask_j = torch.zeros(max_length, num_atom_j)
+                atom_mask_j[j] = -1.0*torch.tensor(mmp['atom_mask_j']).reshape(1, num_atom_j)
+                atom_mask = torch.cat([atom_mask, atom_mask_j], dim=-1)
+                potency_diff[j] = float(mmp['potency_diff'])      
+                # concatenate x, edge_index, edge_attr
+                mmp_data_list.append(data[j_idx])
+
+            batched_data = Batch.from_data_list(mmp_data_list)
+            packed_data[i].x, packed_data[i].edge_index, packed_data[i].edge_attr = batched_data.x, batched_data.edge_index, batched_data.edge_attr
+        packed_data[i].potency_diff = potency_diff
+        packed_data[i].atom_mask = atom_mask.T 
+        packed_data[i].smiles = [smiles_i] + [mmp['smiles'] for mmp in available_mmps]
+    return packed_data
+
 
 
 

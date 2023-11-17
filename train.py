@@ -75,10 +75,15 @@ def run_training(args: Namespace,
     :param args: Arguments.
     :return: A list of ensemble scores.
     """
-    data_train_init, data_test, batched_train_init = data.data_train, data.data_test, data.batched_data_train
-    # further split data_train into train and val
-    data_train, data_val = train_test_split(data_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
-    batched_train, batched_val = train_test_split(batched_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
+    data_train_init, data_test, batched_train_init, batched_data_test = data.data_train, data.data_test, data.batched_data_train, data.batched_data_test
+    if args.split[1] == 0.0:
+        data_train, data_val = data_train_init, data_test
+        batched_train, batched_val = batched_train_init, batched_data_test
+        data_test = None
+    else:
+        # further split data_train into train and val
+        data_train, data_val = train_test_split(data_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
+        batched_train, batched_val = train_test_split(batched_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
 
     train_loader = DataLoader(data_train, batch_size = args.batch_size, shuffle=False)
     val_loader = DataLoader(data_val, batch_size = args.batch_size, shuffle=False)
@@ -89,9 +94,10 @@ def run_training(args: Namespace,
     loss_func = torch.nn.MSELoss()
     metric_func = get_metric_func(metric=args.metric)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.9, patience=10, min_lr=args.lr/20.0)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=args.factor, patience=args.patience, min_lr=args.min_lr)
 
     best_score = float('inf') if args.minimize_score else -float('inf')
+    losses = collections.defaultdict(list)
 
     for epoch in range(args.epochs):
         s_time = time.time()
@@ -101,6 +107,18 @@ def run_training(args: Namespace,
         val_score, val_losses = evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func)
         v_time = time.time() - s_time
         scheduler.step(val_losses['val'][0])
+
+        losses['train'].append(train_losses['train'][0])
+        losses['val'].append(val_losses['val'][0])
+        losses['train_pred'].append(train_losses['pred'][0])
+        losses['val_pred'].append(val_losses['pred'][0])
+        #losses['att'].append(train_losses['att'][0])
+        #losses['att'].append(val_losses['att'][0])
+        losses['train_direction'].append(train_losses['direction'][0])
+        losses['val_direction'].append(val_losses['direction'][0])
+        losses['train_sparsity'].append(train_losses['sparsity'][0])
+        losses['val_sparsity'].append(val_losses['sparsity'][0])
+
         print('Epoch: {:04d}'.format(epoch),
                 'loss_train: {:.6f}'.format(train_losses['train'][0]),
                 'loss_val: {:.6f}'.format(val_losses['val'][0]),
@@ -135,14 +153,16 @@ def run_training(args: Namespace,
             break
     print('best epoch: {:04d}'.format(best_epoch))
     print('best val {:.4s}: {:.4f}'.format(metric, best_score))
-    
     if data_test is not None:
         test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
         #model = load_checkpoint(args)       
         test_score, test_cliff_score  = predict(args, best_model, test_loader, loss_func, metric_func)
 
-        return best_model, test_score, test_cliff_score
-        
+        return best_model, test_score, test_cliff_score, losses
+    else:
+        test_score, test_cliff_score  = predict(args, best_model, val_loader, loss_func, metric_func)
+        return best_model, test_score, test_cliff_score, losses
+
 
 def train(args, model, train_loader, batched_train_loader, loss_func, optimizer):
     """
@@ -162,28 +182,15 @@ def train(args, model, train_loader, batched_train_loader, loss_func, optimizer)
         edge_attr = data.edge_attr.to(device)
         batch = data.batch.to(device)
         y = data.target.to(device)
-        #################
-        if 'att' in args.loss:
-            att_label = data.att_label.to(device) 
-            nan_mask = torch.isnan(att_label)
-            att_trans = torch.abs(att)
-            att_trans = torch.tanh(att_trans)
-            if torch.all(nan_mask):
-                attribution_prior = torch.tensor(0.0, requires_grad=True)
-            else:
-                attribution_prior = loss_func(att_trans[~nan_mask], att_label[[~nan_mask]])
         ####################
         # this will determine whether cliff pair will be used in training
         if args.show_direction_loss:
             batched_x, batched_edge_attr = batched_data.x.to(device), batched_data.edge_attr.to(device)
             batched_edge_index = batched_data.edge_index.to(device)
-            pred_mask = batched_data.pred_mask.to(device)
             batched_batch = batched_data.batch.to(device)
-            condition = pred_mask > 0.
-            row_cond = condition.all(1)           
             ### attribution ####
             model.eval()
-            explain_method = GraphLayerGradCam(model, model.convs[-3])
+            explain_method = GraphLayerGradCam(model, model.convs[-1])
             att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, batched_batch), return_gradients=args.return_gradients)
             att = att.reshape(-1, 1)
             ### sparsity ####
@@ -261,11 +268,10 @@ def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func
             if args.show_direction_loss:
                 batched_x, batched_edge_attr = batched_data.x.to(device), batched_data.edge_attr.to(device)
                 batched_edge_index = batched_data.edge_index.to(device)
-                pred_mask = batched_data.pred_mask.to(device)
                 batched_batch = batched_data.batch.to(device)
                 
                 ### attribution ####
-                explain_method = GraphLayerGradCam(model, model.convs[-3])
+                explain_method = GraphLayerGradCam(model, model.convs[-1])
                 att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, batched_batch), return_gradients=args.return_gradients)
                 att = att.reshape(-1, 1)
                 ####################            

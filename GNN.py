@@ -5,7 +5,7 @@ import torch
 from torch.autograd import Variable
 from torch.nn import Linear as Lin
 from torch.nn import ModuleList, ReLU
-#from torch.nn import Sequential as Seq
+from torch.nn import Sequential as Seq
 from torch_geometric.nn import (
     BatchNorm,
     GATConv,
@@ -84,7 +84,7 @@ class GNN(torch.nn.Module):
                 conv = GENConv(self.hidden_dim, self.hidden_dim)
             elif self.conv_name == "gcn":
                 # transform edge features to [num_edge]
-                self.edge_emb = Sequential(Lin(self.num_edge_features, self.num_edge_features*2),
+                self.edge_emb = Seq(Lin(self.num_edge_features, self.num_edge_features*2),
                                     ReLU(),
                                     Lin(self.num_edge_features*2, 1),
                                     ReLU())
@@ -157,8 +157,9 @@ class GNN(torch.nn.Module):
             x = conv(x, edge_index, edge_attr)
             node_x.append(x)
         #return torch.cat(node_x, dim=-1)
-        alpha = 0.2
-        return alpha*node_x[-1] + (1.0 - alpha)*node_x[0]
+        #alpha = 0.2
+        #return alpha*node_x[-1] + (1.0 - alpha)*node_x[0]
+        return node_x[-1]
     
     def get_pred(self, x):
         """Returns the prediction of the model on a graph embedding after the graph convolutional layers."""

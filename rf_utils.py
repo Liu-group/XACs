@@ -12,13 +12,12 @@ FP_SIZE = 1024
 BOND_RADIUS = 2
 
 
-def gen_dummy_atoms(mol: rdchem.Mol, dummy_atom_no: int = 47) -> List[rdchem.Mol]:
+def gen_dummy_atoms(mol: rdchem.Mol, dummy_atom_no: int = 55) -> List[rdchem.Mol]:
     """
     Given a specific rdkit mol, returns a list of mols where each individual atom
     has been replaced by a dummy atom type.
     """
     mod_mols = []
-
     for idx_atom in range(mol.GetNumAtoms()):
         mol_cpy = deepcopy(mol)
         mol_cpy.GetAtomWithIdx(idx_atom).SetAtomicNum(dummy_atom_no)
@@ -53,8 +52,9 @@ def diff_mask(
     og_pred = pred_fun(og_fp[np.newaxis, :]).squeeze()
 
     mod_mols = gen_dummy_atoms(mol, dummy_atom_no)
-
     mod_fps = [featurize_ecfp4(mol, fp_size, bond_radius) for mol in mod_mols]
+
     mod_fps = np.vstack(mod_fps)
     mod_preds = pred_fun(mod_fps).squeeze()
+
     return og_pred - mod_preds

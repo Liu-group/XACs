@@ -1,12 +1,13 @@
 import torch
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, Mol
 from rdkit.Chem.rdchem import Atom, Bond, Mol
 from torch_geometric.data import Data
-from typing import List
+from typing import List, Union
 import numpy as np
 from const import ATOM_TYPES, BOND_TYPES, STEREO_TYPES
 import numpy as np
+from rf_utils import gen_dummy_atoms
 
 def one_hot_encoding(x, allowable_set):
     """One-hot encoding.
@@ -65,11 +66,9 @@ class MolTensorizer(object):
         """
         # define list of permitted atoms
         atom_types = ATOM_TYPES
-        if hydrogens_implicit == False:
+        if hydrogens_implicit == True:
             atom_types = ["H"] + atom_types
-
         # compute atom features
-
         atom_type_enc = one_hot_encoding(str(atom.GetSymbol()), atom_types)
         implicit_valence_enc = one_hot_encoding(
             int(atom.GetImplicitValence()), [0, 1, 2, 3, 4, "MoreThanFour"]
@@ -147,8 +146,11 @@ class MolTensorizer(object):
 
         return np.array(bond_feature_vector)
     
-    def tensorize(self, smile: str):
-        mol = Chem.MolFromSmiles(smile)
+    def tensorize(self, smile: Union[str, Mol]) -> Data:
+        if isinstance(smile, str):
+            mol = Chem.MolFromSmiles(smile)
+        else:
+            mol = smile
         # Get atom features
         xs = []
         for atom in mol.GetAtoms():
@@ -181,3 +183,15 @@ class MolTensorizer(object):
             perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()
             edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+
+    def gen_masked_atom_feats(self, smiles: str) -> List[Data]: 
+        """
+        Given a smiles, returns a list of graphs data where individual atoms
+        are masked.
+        """
+        mol = Chem.MolFromSmiles(smiles)
+        masked_mols = gen_dummy_atoms(mol)
+        masked_graphs = []
+        for masked_mol in masked_mols:
+            masked_graphs.append(self.tensorize(masked_mol))
+        return masked_graphs
