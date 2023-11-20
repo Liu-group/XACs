@@ -12,16 +12,22 @@ def get_one_smiles_att(model, smiles) -> torch.Tensor:
     featurizer = MolTensorizer()
     data = featurizer.tensorize(smiles)
     model.eval()
+    ''' 
+       if args.att_method == 'GradCAM':
+            explain_method = GraphLayerGradCam(model, model.convs[-1])
+            node_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
+        if args.att_method == 'InputXGrad':
+            explain_method = InputXGradient(model)
+            node_weights, edge_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
+            for idx in range(data.num_edges):
+                e_imp = edge_weights[idx]
+                node_weights[data.edge_index[0, idx]] += e_imp / 2
+                node_weights[data.edge_index[1, idx]] += e_imp / 2
+    '''
     with torch.no_grad():
-        #explain_method = GraphLayerGradCam(model, model.convs[-1])
-        explain_method = InputXGradient(model)
+        explain_method = GraphLayerGradCam(model, model.convs[-1])
         node_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
-        '''for idx in range(data.num_edges):
-            e_imp = edge_weights[idx]
-            node_weights[data.edge_index[0, idx]] += e_imp / 2
-            node_weights[data.edge_index[1, idx]] += e_imp / 2'''
         att = node_weights.cpu().reshape(-1, 1)
-
         masked_graphs = featurizer.gen_masked_atom_feats(smiles)
         pred = model(data.x, data.edge_attr, data.edge_index)
         mod_preds = torch.tensor([model(masked_graph.x, masked_graph.edge_attr, masked_graph.edge_index) for masked_graph in masked_graphs])
@@ -32,7 +38,7 @@ def get_one_smiles_att(model, smiles) -> torch.Tensor:
 
 def evaluate_gnn_explain_direction(data: MoleculeDataset, model):
     model.to('cpu')
-    smiles_test = data.smiles_test
+    smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
     cliff_dict = data.cliff_dict
     gnn_score = []
     gnn_mask_score = []
@@ -70,7 +76,7 @@ def evaluate_gnn_explain_direction(data: MoleculeDataset, model):
     return np.mean(gnn_score)
 
 def evaluate_rf_explain_direction(data, model_rf):
-    smiles_test = data.smiles_test
+    smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
     cliff_dict = data.cliff_dict
     rf_score = []
     for smi in smiles_test:
