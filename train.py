@@ -24,31 +24,37 @@ N_JOBS = int(os.getenv("LSB_DJOB_NUMPROC", multiprocessing.cpu_count()))
 print("Number of Jobs: ", N_JOBS)
 
 def train_test_rf(args: Namespace, data: MoleculeDataset):
-    smiles_train_init = data.smiles_train
-    smiles_test = data.smiles_test
-    y_train_init = data.y_train
-    y_test = data.y_test
-    cliff_mols_test = data.cliff_mols_test
-    # further split data_train into train and val
-    smiles_train, smiles_val, y_train, y_val = train_test_split(smiles_train_init, y_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
-        
+    smiles_train_init = [data.data_train[i].smiles for i in range(len(data.data_train))]
+    smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
+    y_train_init = [data.data_train[i].target for i in range(len(data.data_train))]
+    y_test = [data.data_test[i].target for i in range(len(data.data_test))]
+    cliff_mols_test = [data.data_test[i].cliff for i in range(len(data.data_test))]
+    if args.split[1] == 0.0:
+        smiles_train, y_train = smiles_train_init, y_train_init
+        fps_val = None
+    else:
+        # further split data_train into train and val
+        smiles_train, smiles_val, y_train, y_val = train_test_split(smiles_train_init, y_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
+        fps_val = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_val]) 
+
     fps_train = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_train])
-    fps_val = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_val])
     fps_test = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_test])
     metric_func = get_metric_func(metric=args.metric)
-    best_score = float('inf') if args.minimize_score else -float('inf')
-    for N_TREES in N_TREES_LIST:
-        model_rf = RandomForestRegressor(n_estimators=N_TREES, n_jobs=N_JOBS)
-        model_rf.fit(fps_train, y_train)
-        y_val = model_rf.predict(fps_val)
-        val_score = metric_func(y_val, y_val)
-        if args.minimize_score and val_score < best_score or \
-                not args.minimize_score and val_score > best_score:
-            best_score = val_score
-            best_N_TREES = N_TREES
-
-    print('best N_TREES: {:04d}'.format(best_N_TREES))
-    print('best val {:.4s}: {:.6f}'.format(args.metric, best_score))
+    if fps_val is not None:
+        best_score = float('inf') if args.minimize_score else -float('inf')
+        for N_TREES in N_TREES_LIST:
+            model_rf = RandomForestRegressor(n_estimators=N_TREES, n_jobs=N_JOBS)
+            model_rf.fit(fps_train, y_train)
+            y_val = model_rf.predict(fps_val)
+            val_score = metric_func(y_val, y_val)
+            if args.minimize_score and val_score < best_score or \
+                    not args.minimize_score and val_score > best_score:
+                best_score = val_score
+                best_N_TREES = N_TREES
+        print('best N_TREES: {:04d}'.format(best_N_TREES))
+        print('best val {:.4s}: {:.6f}'.format(args.metric, best_score))
+    else:
+        best_N_TREES = 100
     model_rf = RandomForestRegressor(n_estimators=best_N_TREES, n_jobs=N_JOBS)
     model_rf.fit(fps_train, y_train)
     y_pred = model_rf.predict(fps_test)

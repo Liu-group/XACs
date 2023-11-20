@@ -36,7 +36,7 @@ def cross_validate(args, data: MoleculeDataset):
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print("Total number of trainable params: ", total_params)    
             
-        model, test_score, test_cliff_score = run_training(args, model, data)
+        model, test_score, test_cliff_score, _ = run_training(args, model, data)
         gnn_score = evaluate_gnn_explain_direction(data, model)
         all_scores['gnn_test_score'].append(test_score)
         all_scores['gnn_test_cliff_score'].append(test_cliff_score)
@@ -48,7 +48,7 @@ def cross_validate(args, data: MoleculeDataset):
             all_scores['rf_test_cliff_score'].append(rf_test_cliff_score)
             all_scores['rf_direction_score'].append(rf_score)
 
-        
+        '''
         ####### testing mlp #######
         from torch_geometric.loader import DataLoader
         from sklearn.model_selection import train_test_split
@@ -91,6 +91,7 @@ def cross_validate(args, data: MoleculeDataset):
         print("Using GNN features for RF rmse:", gnn_rf_rmse)
         all_scores['gnn_rf_test_rmse'].append(gnn_rf_rmse)
     ##############################
+    '''
         ## not sure if necessary; the reset_parameters() function should also be checked.
         del model
         torch.cuda.empty_cache()

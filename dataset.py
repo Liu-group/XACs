@@ -218,7 +218,6 @@ class MoleculeDataset:
         self.batched_data_test = [data_all[i] for i in test_idx]
         self.data_test = [self.data_all[i] for i in test_idx]
 
-
     def __repr__(self):
         return f"Data object with molecules as: {len(self.y_train)} train/{len(self.y_test)} test"
     
