@@ -30,9 +30,9 @@ def pairwise_ranking_loss(x, y):
     Computes the pairwise ranking loss between the predicted attributions and the ground truth labels.
     """
     # Compute the pairwise ranking loss
-    loss = 0
-    loss += torch.max(-x * y, torch.zeros_like(x)).sum()
-    #loss += torch.max(-x * y, -torch.ones_like(x)).sum()
+    loss = 0.
+    #loss += torch.max(-x * y, torch.zeros_like(x)).sum()
+    loss += torch.max(-x * y, -torch.ones_like(x)).sum()
     #loss += (-x * y).sum()
     return loss
 
