@@ -85,7 +85,6 @@ def run_training(args: Namespace,
     if args.split[1] == 0.0:
         data_train, data_val = data_train_init, data_test
         batched_train, batched_val = batched_train_init, batched_data_test
-        data_test = None
     else:
         # further split data_train into train and val
         data_train, data_val = train_test_split(data_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
@@ -105,12 +104,14 @@ def run_training(args: Namespace,
     best_score = float('inf') if args.minimize_score else -float('inf')
     losses = collections.defaultdict(list)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     for epoch in range(args.epochs):
         s_time = time.time()
-        train_losses = train(args, model, train_loader, batched_train_loader, loss_func, optimizer)
+        train_losses = train(args, model, train_loader, batched_train_loader, loss_func, optimizer, device)
         t_time = time.time() - s_time
         s_time = time.time()
-        val_score, val_losses = evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func)
+        val_score, val_losses = evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func, device)
         v_time = time.time() - s_time
         scheduler.step(val_losses['val'][0])
 
@@ -159,22 +160,17 @@ def run_training(args: Namespace,
             break
     print('best epoch: {:04d}'.format(best_epoch))
     print('best val {:.4s}: {:.4f}'.format(metric, best_score))
-    if data_test is not None:
-        test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
-        #model = load_checkpoint(args)       
-        test_score, test_cliff_score  = predict(args, best_model, test_loader, loss_func, metric_func)
 
-        return best_model, test_score, test_cliff_score, losses
-    else:
-        test_score, test_cliff_score  = predict(args, best_model, val_loader, loss_func, metric_func)
-        return best_model, test_score, test_cliff_score, losses
+    test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
+    batched_test_loader = DataLoader(batched_data_test, batch_size = args.batch_size, shuffle=False)
+    test_score, test_cliff_score  = predict(args, best_model, test_loader, loss_func, metric_func, device)
+    return best_model, test_score, test_cliff_score, losses
 
 
-def train(args, model, train_loader, batched_train_loader, loss_func, optimizer):
+def train(args, model, train_loader, batched_train_loader, loss_func, optimizer, device):
     """
     Trains a model for an epoch.
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.train().to(device)
     losses = collections.defaultdict(list)
     total_loss, pred_loss, att_loss, direct_loss, sparsity_loss = 0.0, 0.0, 0.0, 0.0, 0.0    
@@ -194,10 +190,11 @@ def train(args, model, train_loader, batched_train_loader, loss_func, optimizer)
             batched_x, batched_edge_attr = batched_data.x.to(device), batched_data.edge_attr.to(device)
             batched_edge_index = batched_data.edge_index.to(device)
             batched_batch = batched_data.batch.to(device)
+            mini_batch = batched_data.mini_batch.to(device)
             ### attribution ####
             model.eval()
             explain_method = GraphLayerGradCam(model, model.convs[-1])
-            att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, batched_batch), return_gradients=args.return_gradients)
+            att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, mini_batch), return_gradients=args.return_gradients)
             att = att.reshape(-1, 1)
             ### sparsity ####
             sparsity_prior = torch.norm(att, p=args.norm)
@@ -215,10 +212,6 @@ def train(args, model, train_loader, batched_train_loader, loss_func, optimizer)
         loss = loss_func(out.reshape(-1, 1), y.reshape(-1, 1))
         if args.loss == 'MSE':
             train_loss = loss 
-        elif args.loss == 'MSE+att':
-            train_loss = loss + att_loss_weight*attribution_prior
-        elif args.loss == 'MSE+att+sparsity':
-            train_loss = loss + att_loss_weight*attribution_prior + sparsity_loss_weight*sparsity_prior
         elif args.loss == 'MSE+sparsity':
             train_loss = loss + sparsity_loss_weight*sparsity_prior
         elif args.loss == 'MSE+direction+sparsity':
@@ -231,22 +224,16 @@ def train(args, model, train_loader, batched_train_loader, loss_func, optimizer)
         optimizer.step()
         total_loss += train_loss.item()
         pred_loss += loss.item()
-        #att_loss +=  attribution_prior.item()
         graph_count += data.num_graphs
     
     losses['train'].append(total_loss/graph_count)
     losses['pred'].append(pred_loss/graph_count)
-    #losses['att'].append(att_loss/graph_count)
     losses['direction'].append(direct_loss/graph_count)
     losses['sparsity'].append(sparsity_loss/graph_count)
 
     return losses
 
-def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func):
-    """
-    Evaluates a model on a dataset.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func, device):
     model.eval().to(device)
     losses = collections.defaultdict(list)
     total_loss, pred_loss, att_loss, direct_loss, sparsity_loss = 0.0, 0.0, 0.0, 0.0, 0.0
@@ -259,26 +246,15 @@ def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func
             edge_attr = data.edge_attr.to(device)
             batch = data.batch.to(device)
             y = data.target.to(device)
-            
-            #################
-            if 'att' in args.loss:
-                att_label = data.att_label.to(device)
-                nan_mask = torch.isnan(att_label)
-                att_trans = torch.abs(att)
-                att_trans = torch.tanh(att_trans)
-                if torch.all(nan_mask):
-                    attribution_prior = torch.tensor(0.0, requires_grad=True)
-                else:
-                    attribution_prior = loss_func(att_trans[~nan_mask], att_label[[~nan_mask]])
             ####################
             if args.show_direction_loss:
                 batched_x, batched_edge_attr = batched_data.x.to(device), batched_data.edge_attr.to(device)
                 batched_edge_index = batched_data.edge_index.to(device)
                 batched_batch = batched_data.batch.to(device)
-                
+                mini_batch = batched_data.mini_batch.to(device)
                 ### attribution ####
                 explain_method = GraphLayerGradCam(model, model.convs[-1])
-                att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, batched_batch), return_gradients=args.return_gradients)
+                att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, mini_batch), return_gradients=args.return_gradients)
                 att = att.reshape(-1, 1)
                 ####################            
                 sparsity_prior = torch.norm(att, p=args.norm)
@@ -294,10 +270,6 @@ def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func
             loss = loss_func(out.reshape(-1, 1), y.reshape(-1, 1))
             if args.loss == 'MSE':
                 val_loss = loss 
-            elif args.loss == 'MSE+att':
-                val_loss = loss + att_loss_weight*attribution_prior
-            elif args.loss == 'MSE+att+sparsity':
-                val_loss = loss + att_loss_weight*attribution_prior + args.sparsity_loss_weight*sparsity_prior
             elif args.loss == 'MSE+sparsity':
                 val_loss = loss + sparsity_loss_weight*sparsity_prior
             elif args.loss == 'MSE+direction+sparsity':
@@ -314,17 +286,12 @@ def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func
     
     losses['val'].append(total_loss/graph_count)
     losses['pred'].append(pred_loss/graph_count)
-    #losses['att'].append(att_loss/graph_count)
     losses['direction'].append(direct_loss/graph_count)
     losses['sparsity'].append(sparsity_loss/graph_count)
 
     return val_score, losses
 
-def predict(args, model, test_loader, loss_func, metric_func):
-    """
-    Evaluates a model on a test dataset.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def predict(args, model, test_loader, loss_func, metric_func, device):
     model.eval().to(device)
     y_pred, y_true, cliffs = [], [], []
     test_batch_loss =  0.0
@@ -335,12 +302,6 @@ def predict(args, model, test_loader, loss_func, metric_func):
         cliffs += data.cliff.data.cpu().tolist()
         y = data.target.to(device)
         out = model(x, edge_attr, edge_index, batch)
-
-        #indices_list = get_batch_indices(batch.cpu().tolist())
-        explain_method = GraphLayerGradCam(model, model.convs[-1])
-        att = explain_method.attribute((x, edge_attr), additional_forward_args=(edge_index, batch))
-        att = att.cpu().detach().reshape(-1, 1)
-
         loss = loss_func(out.reshape(-1, 1), y.reshape(-1, 1))
         test_batch_loss += loss.item()
         y_pred += list(out.cpu().detach().reshape(-1))
