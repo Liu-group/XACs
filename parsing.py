@@ -47,7 +47,7 @@ def get_args():
     parser.add_argument('--sparsity_loss_weight', type=float, default=0.)
     parser.add_argument('--norm', type=int, default=1)
     parser.add_argument('--direction_loss_weight', type=float, default=0.01)
-    parser.add_argument('--show_direction_loss', type=bool, default=True)
+    parser.add_argument('--show_direction_loss', type=bool, default=False)
     parser.add_argument('--att_method', type=str, default='GradCAM')
     parser.add_argument('--return_gradients', type=bool, default=False)
 

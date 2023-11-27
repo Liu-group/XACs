@@ -36,11 +36,13 @@ def cross_validate(args, data: MoleculeDataset):
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print("Total number of trainable params: ", total_params)    
             
-        model, test_score, test_cliff_score, _ = run_training(args, model, data)
-        gnn_score = evaluate_gnn_explain_direction(data, model)
+        best_model, test_score, test_cliff_score, _ = run_training(args, model, data)
+        gnn_score = evaluate_gnn_explain_direction(data, best_model)
         all_scores['gnn_test_score'].append(test_score)
         all_scores['gnn_test_cliff_score'].append(test_cliff_score)
-        all_scores['gnn_direction_score'].append(gnn_score)
+        all_scores['gnn_gradcam_direction_score'].append(gnn_score['gradcam'])
+        all_scores['gnn_inputxgrad_direction_score'].append(gnn_score['inputxgrad'])
+        all_scores['gnn_graph_mask_direction_score'].append(gnn_score['mask'])
         if args.contrast2rf:
             rf_model, rf_test_score, rf_test_cliff_score = train_test_rf(args, data)
             rf_score = evaluate_rf_explain_direction(data, rf_model)
@@ -93,7 +95,7 @@ def cross_validate(args, data: MoleculeDataset):
     ##############################
     '''
         ## not sure if necessary; the reset_parameters() function should also be checked.
-        del model
+        del best_model, model
         torch.cuda.empty_cache()
     # Report scores for each fold
     print(f'{args.num_folds}-fold cross validation')

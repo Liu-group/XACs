@@ -38,7 +38,7 @@ if __name__ == '__main__':
         print("Total number of trainable params: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
 
         print(f"Running GNN training... for {args.dataset} using {args.loss}\n")
-        best_model, test_score, test_cliff_score = run_training(args, model, data)
+        best_model, _, _, _ = run_training(args, model, data)
         
         if args.contrast2rf:
             print("Running Random Forest...")

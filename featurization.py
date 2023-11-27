@@ -53,10 +53,8 @@ class MolTensorizer(object):
         self.featurization = featurization
         unrelated_smiles = "O=O"
         unrelated_mol = Chem.MolFromSmiles(unrelated_smiles)
-        n_node_features = len(self.atom_features(unrelated_mol.GetAtomWithIdx(0)))
-        n_edge_features = len(self.bond_features(unrelated_mol.GetBondBetweenAtoms(0, 1)))
-        self._atom_feature_size = n_node_features
-        self._bond_feature_size = n_edge_features
+        self.num_node_feature = len(self.atom_features(unrelated_mol.GetAtomWithIdx(0)))
+        self.num_bond_feature = len(self.bond_features(unrelated_mol.GetBondBetweenAtoms(0, 1)))
 
     def atom_features(
         self, atom: Atom, use_chirality: bool = False, hydrogens_implicit: bool = False
@@ -156,13 +154,13 @@ class MolTensorizer(object):
         for atom in mol.GetAtoms():
             xs.append(self.atom_features(atom))
         x = np.array(xs)   
-        x = torch.tensor(x).view(-1, self._atom_feature_size)
+        x = torch.tensor(x).view(-1, self.num_node_feature)
 
         # Get bond features
         edge_indices, edge_attrs = [], []
         # If no bonds (e.g. H2S), create an artifact bond
         if mol.GetNumBonds() == 0:
-            e = [0] * self._bond_feature_size
+            e = [0] * self.num_bond_feature
             edge_indices = [[0, 0], [0, 0]]
             edge_attrs = [e, e]
         else:
@@ -176,7 +174,7 @@ class MolTensorizer(object):
         edge_index = torch.tensor(edge_indices)
         edge_index = edge_index.t().type(torch.LongTensor).view(2, -1)
         edge_attrs = np.array(edge_attrs)
-        edge_attr = torch.tensor(edge_attrs).view(-1, self._bond_feature_size)
+        edge_attr = torch.tensor(edge_attrs).view(-1, self.num_bond_feature)
 
         # Sort indices.
         if edge_index.numel() > 0:

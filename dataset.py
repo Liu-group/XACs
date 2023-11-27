@@ -192,7 +192,7 @@ class MoleculeDataset:
                  seed: int = 42, 
                  threshold: float = 0.9,
                  save_split: bool = True):
-        dict_path = os.path.join(WORKING_DIR, self.dataset_name, f'mcs_dict_{threshold}_real_clean.pkl')
+        dict_path = os.path.join(WORKING_DIR, self.dataset_name, f'mcs_dict_{threshold}_copy.pkl')
         split_path = os.path.join(self.working_path, f"{self.dataset_name}_cliff_thre_{threshold}_split_{seed}.csv")
         
         self.cliff = ActivityCliffs(self.smiles_all, self.y_all, threshold=threshold, dict_path=dict_path)
@@ -292,6 +292,7 @@ def pack_data(data: Data, cliff_dict: dict) -> Data:
         potency_diff = torch.zeros(max_length, 1)
         if num_av_mmp == 0:
             atom_mask = torch.zeros(max_length, num_atom_i)
+            packed_data[i].mini_batch = torch.zeros(num_atom_i).long()
         else:
             mmp_data_list = [packed_data[i]]
             atom_mask_i = torch.zeros(max_length, num_atom_i)
@@ -310,6 +311,7 @@ def pack_data(data: Data, cliff_dict: dict) -> Data:
 
             batched_data = Batch.from_data_list(mmp_data_list)
             packed_data[i].x, packed_data[i].edge_index, packed_data[i].edge_attr = batched_data.x, batched_data.edge_index, batched_data.edge_attr
+            packed_data[i].mini_batch = batched_data.batch
         packed_data[i].potency_diff = potency_diff
         packed_data[i].atom_mask = atom_mask.T 
         packed_data[i].smiles = [smiles_i] + [mmp['smiles'] for mmp in available_mmps]

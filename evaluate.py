@@ -1,4 +1,6 @@
+import collections  
 import torch
+from torch_geometric.data import Data
 from rf_utils import diff_mask
 from featurization import MolTensorizer
 from explain.GradCAM import GraphLayerGradCam
@@ -6,74 +8,110 @@ from explain.InputXGrad import InputXGradient
 import numpy as np
 from utils import pairwise_ranking_loss
 from dataset import MoleculeDataset
+from GNN import GNN
+from typing import List
 
 
-def get_one_smiles_att(model, smiles) -> torch.Tensor:
-    featurizer = MolTensorizer()
-    data = featurizer.tensorize(smiles)
-    model.eval()
-    ''' 
-       if args.att_method == 'GradCAM':
-            explain_method = GraphLayerGradCam(model, model.convs[-1])
-            node_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
-        if args.att_method == 'InputXGrad':
-            explain_method = InputXGradient(model)
-            node_weights, edge_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
-            for idx in range(data.num_edges):
-                e_imp = edge_weights[idx]
-                node_weights[data.edge_index[0, idx]] += e_imp / 2
-                node_weights[data.edge_index[1, idx]] += e_imp / 2
-    '''
+def get_gradcam_att(model: GNN, graph: Data) -> torch.Tensor:
     with torch.no_grad():
         explain_method = GraphLayerGradCam(model, model.convs[-1])
-        node_weights = explain_method.attribute((data.x, data.edge_attr), additional_forward_args=(data.edge_index))
-        att = node_weights.cpu().reshape(-1, 1)
-        masked_graphs = featurizer.gen_masked_atom_feats(smiles)
-        pred = model(data.x, data.edge_attr, data.edge_index)
+        node_weights = explain_method.attribute((graph.x, graph.edge_attr), additional_forward_args=(graph.edge_index))
+    att = node_weights.cpu().reshape(-1, 1)
+    return att
+
+def get_inputxgrad_att(model: GNN, graph: Data) -> torch.Tensor:
+    with torch.no_grad():
+        explain_method = InputXGradient(model)
+        node_weights, edge_weights = explain_method.attribute((graph.x, graph.edge_attr), additional_forward_args=(graph.edge_index))
+        for idx in range(graph.num_edges):
+            e_imp = edge_weights[idx]
+            node_weights[graph.edge_index[0, idx]] += e_imp / 2
+            node_weights[graph.edge_index[1, idx]] += e_imp / 2
+    att = node_weights.cpu().reshape(-1, 1)
+    return att
+
+def get_graph_mask_att(model: GNN, graph: Data, masked_graphs: List[Data]) -> torch.Tensor:
+    with torch.no_grad():
+        pred = model(graph.x, graph.edge_attr, graph.edge_index)
         mod_preds = torch.tensor([model(masked_graph.x, masked_graph.edge_attr, masked_graph.edge_index) for masked_graph in masked_graphs])
-        diff = pred - mod_preds
-        diff = diff.cpu().reshape(-1, 1)
+    diff = pred - mod_preds
+    diff = diff.cpu().reshape(-1, 1)
+    return diff
 
-    return att, diff
-
-def evaluate_gnn_explain_direction(data: MoleculeDataset, model):
+def get_uncommon_att(att: torch.Tensor, uncommon_atom_idx: list) -> torch.Tensor:
+    return att[uncommon_atom_idx] if len(uncommon_atom_idx) > 0 else torch.zeros(1)    
+   
+def evaluate_gnn_explain_direction(data: MoleculeDataset, model: GNN):
     model.to('cpu')
+    model.eval()
     smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
     cliff_dict = data.cliff_dict
-    gnn_score = []
-    gnn_mask_score = []
-    loss = 0.0
+    gnn_direction_score = collections.defaultdict(list)
+    gradcam_loss, inputxgrad_loss = 0., 0.
     num_pairs = 0
+    featurizer = MolTensorizer()
     for smi in smiles_test:
         mmp_dicts = cliff_dict[smi]
-        att_i, diff_i = get_one_smiles_att(model, smi)
+        graph_i = featurizer.tensorize(smi)
+        masked_graphs_i = featurizer.gen_masked_atom_feats(smi)
+        gradcam_att_i = get_gradcam_att(model, graph_i)
+        inputxgrad_att_i = get_inputxgrad_att(model, graph_i)
+        diff_mask_i = get_graph_mask_att(model, graph_i, masked_graphs_i)
         for mmp_dict in mmp_dicts[1:]:
+            num_pairs += 1
             diff = mmp_dict['potency_diff']
             mmp_smi = mmp_dict['smiles']
             uncommon_atom_idx_i = mmp_dict['uncommon_atom_idx_i']
             uncommon_atom_idx_j = mmp_dict['uncommon_atom_idx_j']
-
-            att_j, diff_j = get_one_smiles_att(model, mmp_smi)
-
-            att_i_uncom = att_i[uncommon_atom_idx_i] if len(uncommon_atom_idx_i) > 0 else torch.zeros(1)
-            att_j_uncom = att_j[uncommon_atom_idx_j] if len(uncommon_atom_idx_j) > 0 else torch.zeros(1)
             
-            loss += pairwise_ranking_loss((torch.sum(att_i_uncom) - torch.sum(att_j_uncom)), torch.tensor(diff))
-            num_pairs += 1
-            score = 1 if (torch.sum(att_i_uncom) - torch.sum(att_j_uncom)) * diff > 0 else 0
+            graph_j = featurizer.tensorize(mmp_smi)
+            masked_graphs_j = featurizer.gen_masked_atom_feats(mmp_smi)
 
-            diff_i_uncom = diff_i[uncommon_atom_idx_i] if len(uncommon_atom_idx_i) > 0 else torch.zeros(1)
-            diff_j_uncom = diff_j[uncommon_atom_idx_j] if len(uncommon_atom_idx_j) > 0 else torch.zeros(1)
-            
-            mask_score = 1 if (torch.sum(diff_i_uncom) - torch.sum(diff_j_uncom)) * diff > 0 else 0
-            gnn_score.append(score)
-            gnn_mask_score.append(mask_score)
-    print("Total attribution loss: ", loss)
-    print("Molecule averaged attribution loss: ", loss/len(smiles_test))
-    print("Pair averaged attribution loss: ", loss/num_pairs)
-    print("gnn direction score: ", np.mean(gnn_score))
-    print("gnn mask score: ", np.mean(gnn_mask_score))
-    return np.mean(gnn_score)
+            gradcam_att_j = get_gradcam_att(model, graph_j)
+            inputxgrad_att_j = get_inputxgrad_att(model, graph_j)
+            diff_mask_j = get_graph_mask_att(model, graph_j, masked_graphs_j)
+
+            gnn_direction_score['gradcam'].append(1 if \
+                (torch.sum(get_uncommon_att(gradcam_att_i, uncommon_atom_idx_i)) - \
+                 torch.sum(get_uncommon_att(gradcam_att_j, uncommon_atom_idx_j))
+                 ) * diff > 0 \
+                 else 0)            
+            gnn_direction_score['inputxgrad'].append(1 if \
+                (torch.sum(get_uncommon_att(inputxgrad_att_i, uncommon_atom_idx_i)) - \
+                 torch.sum(get_uncommon_att(inputxgrad_att_j, uncommon_atom_idx_j))
+                 ) * diff > 0 \
+                 else 0)
+
+
+            gnn_direction_score['mask'].append(1 if \
+                (torch.sum(get_uncommon_att(diff_mask_i, uncommon_atom_idx_i)) - \
+                 torch.sum(get_uncommon_att(diff_mask_j, uncommon_atom_idx_j))
+                 ) * diff > 0 \
+                 else 0)
+            gradcam_loss += pairwise_ranking_loss(
+                    (torch.sum(get_uncommon_att(gradcam_att_i, uncommon_atom_idx_i)) - \
+                     torch.sum(get_uncommon_att(gradcam_att_j, uncommon_atom_idx_j))
+                     ),
+                    torch.tensor(diff)).item()
+            inputxgrad_loss += pairwise_ranking_loss(
+                    (torch.sum(get_uncommon_att(inputxgrad_att_i, uncommon_atom_idx_i)) - \
+                     torch.sum(get_uncommon_att(inputxgrad_att_j, uncommon_atom_idx_j))
+                     ),
+                    torch.tensor(diff)).item()
+
+    gradcam_score = np.mean(gnn_direction_score['gradcam'])
+    inputxgrad_score = np.mean(gnn_direction_score['inputxgrad'])
+    mask_score = np.mean(gnn_direction_score['mask'])
+    print("Total CradCAM attribution loss: {:.4f}".format(gradcam_loss))
+    print("GradCAM Molecule averaged attribution loss: {:.4f}".format(gradcam_loss/len(smiles_test)))
+    print("Pair averaged attribution loss: {:.4f}".format(gradcam_loss/num_pairs))
+    print("Total InputXGrad attribution loss: {:.4f}".format(inputxgrad_loss))
+    print("InputXGrad Molecule averaged attribution loss: {:.4f}".format(inputxgrad_loss/len(smiles_test)))
+    print("Pair averaged attribution loss: {:.4f}".format(inputxgrad_loss/num_pairs))
+    print("gnn GradCAM direction score: {:.4f}".format(gradcam_score))
+    print("gnn InputXGrad direction score: {:.4f}".format(inputxgrad_score))
+    print("gnn mask score: {:.4f}".format(mask_score))
+    return {'gradcam': gradcam_score, 'inputxgrad': inputxgrad_score, 'mask': mask_score}
 
 def evaluate_rf_explain_direction(data, model_rf):
     smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]

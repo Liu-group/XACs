@@ -58,53 +58,9 @@ class GraphLayerGradCam(ca.LayerGradCam):
             device_ids=self.device_ids,
             attribute_to_layer_input=attribute_to_layer_input,
         )
-        #is_layer_tuple = isinstance(layer_gradients, tuple)
         undo_gradient_requirements(inputs, gradient_mask)
-        #print('layer_gradients', layer_gradients)
-        #print('layer_evals', layer_evals)
-        # Gradient Calculation end
+        attributions = tuple(
+                            torch.einsum("ij, ij -> i", layer_evals, layer_gradients) 
+                            for layer_evals, layer_gradients in zip(layer_evals, layer_gradients))
 
-        ## Addition: shape from PyG to General PyTorch
-        # The default implementation from DIGS shapes the layer_grad/layer_evels
-        # from [num_nodes, feature_size] to [1, feature_size, num_nodes].
-        # The gradient will then be averaged over the num_nodes dimension,
-        layer_gradients = tuple(layer_grad.transpose(0, 1).unsqueeze(0)
-                                for layer_grad in layer_gradients)
-
-        layer_evals = tuple(layer_eval.transpose(0, 1).unsqueeze(0)
-                            for layer_eval in layer_evals)
-        
-        # end
-        summed_grads = tuple(
-            torch.mean(
-                layer_grad,
-                dim=tuple(x for x in range(2, len(layer_grad.shape))),
-                keepdim=True,
-            )
-            for layer_grad in layer_gradients
-        )
-
-        if return_gradients:
-            scaled_grads = tuple(
-                torch.sum(summed_grad, dim=1, keepdim=True)
-                for summed_grad in summed_grads
-            )
-            scaled_grads = tuple(scaled_grad.squeeze(0).transpose(0, 1)
-                                 for scaled_grad in scaled_grads)
-            return scaled_grads[0] if _is_tuple(scaled_grads) else scaled_grads
-        scaled_acts = tuple(
-            torch.sum(summed_grad * layer_eval, dim=1, keepdim=True)
-            for summed_grad, layer_eval in zip(summed_grads, layer_evals)
-        )
-        if relu_attributions:
-            scaled_acts = tuple(F.relu(scaled_act) for scaled_act in scaled_acts)
-
-        # what I add: shape from General PyTorch to PyG
-
-        scaled_acts = tuple(scaled_act.squeeze(0).transpose(0, 1)
-                            for scaled_act in scaled_acts)
-
-        # end
-
-        # only returns the first element of the tuple, which is the node attribution
-        return scaled_acts[0] if _is_tuple(scaled_acts) else scaled_acts
+        return attributions[0] if _is_tuple(inputs) else attributions

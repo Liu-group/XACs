@@ -22,8 +22,8 @@ from torch_geometric.nn import (
 class GNN(torch.nn.Module):
     def __init__(
         self,
-        num_node_features: int,
-        num_edge_features: int,
+        num_node_features: int = 42,
+        num_edge_features: int = 6,
         hidden_dim: int = 128,
         num_layers: int = 3,
         num_classes: int = 1,
