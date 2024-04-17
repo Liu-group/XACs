@@ -41,7 +41,7 @@ if __name__ == '__main__':
         if os.path.exists(config_file_exweight):
             best_params = load_pickle(config_file_exweight)
             print(f"Best explanation weight for {args.dataset} loaded!")
-            setattr(args, 'com_loss_weight', 0.)
+            setattr(args, 'com_loss_weight', best_params['weight'])
             setattr(args, 'uncom_loss_weight', best_params['weight'])
             print(f"com_loss_weight: {args.com_loss_weight}")
             print(f"uncom_loss_weight: {args.uncom_loss_weight}")
