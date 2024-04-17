@@ -22,7 +22,6 @@ class ActivityCliffs:
                  dict_path: str = None,
                  threshold: float = 0.9,
                  potency_fold: float = 10,
-                 in_log10: bool = True,
                  ):
         self.smiles = smiles
         self.num_smiles = len(self.smiles)
@@ -30,7 +29,6 @@ class ActivityCliffs:
         
         self.threshold = threshold
         self.potency_fold = potency_fold
-        self.in_log10 = in_log10
         if os.path.exists(dict_path):
             if os.path.isfile(dict_path):
                 with open(dict_path, 'rb') as f:
@@ -65,11 +63,8 @@ class ActivityCliffs:
         get the matched molecular pair dictionary.
         :param threshold: (float) the threshold of the common substructure fraction
         :param potency_fold: (float) the potency fold change threshold
-        :param in_log10: (bool) whether the bioactivity is in log10 scale
         :return: (np.array) returns a binary matrix where 1 means activity cliff compounds
-
         """
-        bioactivity = 10 ** abs(np.array(self.bioactivity)) if self.in_log10 else self.bioactivity
         mcs_dict = collections.defaultdict(list)
         for smiles in self.smiles:
             mcs_dict[smiles].append({"is_cliff_mol": False})
@@ -78,10 +73,10 @@ class ActivityCliffs:
         asyncresults = []
         for i in tqdm(range(self.num_smiles)):
             smiles_i = self.smiles[i]
-            bioactivity_i = bioactivity[i]
+            bioactivity_i = self.bioactivity[i]
             for j in range(i + 1, self.num_smiles):
                 smiles_j = self.smiles[j]
-                bioactivity_j = bioactivity[j]
+                bioactivity_j = self.bioactivity[j]
                 asyncresults.append([i, j] + [pool.apply_async(if_cliff, args=(smiles_i, 
                                                                      smiles_j, 
                                                                      bioactivity_i, 
@@ -91,13 +86,13 @@ class ActivityCliffs:
         for asyncresult in asyncresults:    
             i, j, (mmp_dict_i, mmp_dict_j) = asyncresult
             smiles_i, smiles_j = self.smiles[i], self.smiles[j]
-            bioactivity_i, bioactivity_j = self.bioactivity[i], self.bioactivity[j]
+            y_i, y_j = -np.log10(self.bioactivity[i]), -np.log10(self.bioactivity[j])
             if mmp_dict_i is not None:
                 mcs_dict[smiles_i][0]['is_cliff_mol'] = True
                 mcs_dict[smiles_j][0]['is_cliff_mol'] = True
                 if mmp_dict_i is not True:
-                    mmp_dict_i['potency_diff'] = bioactivity_i - bioactivity_j
-                    mmp_dict_j['potency_diff'] = bioactivity_j - bioactivity_i
+                    mmp_dict_i['potency_diff'] = y_i - y_j
+                    mmp_dict_j['potency_diff'] = y_j - y_i
                     mcs_dict[smiles_i].append(mmp_dict_i)
                     mcs_dict[smiles_j].append(mmp_dict_j)
             else:   
@@ -110,6 +105,7 @@ class ActivityCliffs:
         return mcs_dict
 
 def if_cliff(smiles_i, smiles_j, bioactivity_i, bioactivity_j, threshold, potency_fold):
+    """Judge whether the pair of molecules is a cliff."""
     diff = find_fc(bioactivity_i, bioactivity_j)
     if diff > potency_fold:
         mmp = moleculeace_similarity(smiles_i, smiles_j, similarity=threshold)
@@ -121,14 +117,15 @@ def if_cliff(smiles_i, smiles_j, bioactivity_i, bioactivity_j, threshold, potenc
     return None, None
 
 def get_mcs(smiles_i, smiles_j):
+    """Get the maximum common substructure of two molecules and return as a dictionary."""
     mol_i, mol_j = Chem.MolFromSmiles(smiles_i), Chem.MolFromSmiles(smiles_j)
     num_atoms_i, num_atoms_j = mol_i.GetNumAtoms(), mol_j.GetNumAtoms()
     atom_indices_i, atom_indices_j = list(range(num_atoms_i)), list(range(num_atoms_j))
 
     mcs = rdFMCS.FindMCS([mol_i, mol_j],
-                        #matchValences=True,
-                        #ringMatchesRingOnly=True,
-                        #completeRingsOnly=True,
+                        matchValences=True,
+                        ringMatchesRingOnly=True,
+                        completeRingsOnly=True,
                         timeout=TIMEOUT_MCS)
     if not mcs.canceled:        
         substru_smi = mcs.smartsString
@@ -154,31 +151,10 @@ def get_mcs(smiles_i, smiles_j):
     mmp_dict_i['atom_mask_j'], mmp_dict_j['atom_mask_j'] = [1 if i in uncommon_atom_idx_j else 0 for i in range(num_atoms_j)], [1 if i in uncommon_atom_idx_i else 0 for i in range(num_atoms_i)]
     return mmp_dict_i, mmp_dict_j
 
-
-
 def find_fc(a: float, b: float):
-    """Get the fold change of to bioactivities (deconvert from log10 if needed)"""
+    """Get the fold change of to bioactivities"""
 
     return max([a, b]) / min([a, b])
-
-    
-def get_fc(bioactivity: List[float], in_log10: bool = True):
-    """ Calculates the pairwise fold difference in compound activity given a list of activities"""
-
-    bioactivity = 10 ** abs(np.array(bioactivity)) if in_log10 else bioactivity
-
-    act_len = len(bioactivity)
-    m = np.zeros([act_len, act_len])
-    # Calculate upper triangle of matrix
-    for i in range(act_len):
-        for j in range(i, act_len):
-            m[i, j] = find_fc(bioactivity[i], bioactivity[j])
-
-    m = m + m.T - np.diag(np.diag(m))
-    # Fill the diagonal with 0's
-    np.fill_diagonal(m, 0)
-
-    return m
 
 def get_tanimoto_matrix(smiles: List[str], radius: int = 2, nBits: int = 1024):
     """ Calculates a matrix of Tanimoto similarity scores for a list of SMILES string"""
@@ -195,7 +171,6 @@ def get_tanimoto_matrix(smiles: List[str], radius: int = 2, nBits: int = 1024):
     np.fill_diagonal(m, 0)
 
     return m
-
 
 def get_scaffold_score(smiles_i: str, smiles_j: str, radius: int = 2, nBits: int = 1024):
     mol_i, mol_j = Chem.MolFromSmiles(smiles_i), Chem.MolFromSmiles(smiles_j)

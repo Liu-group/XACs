@@ -10,7 +10,9 @@ from utils import pairwise_ranking_loss
 from dataset import MoleculeDataset
 from GNN import GNN
 from typing import List
-
+from train import predict
+from torch_geometric.loader import DataLoader
+from metrics import get_metric_func
 
 def get_gradcam_att(model: GNN, graph: Data) -> torch.Tensor:
     with torch.no_grad():
@@ -41,16 +43,17 @@ def get_graph_mask_att(model: GNN, graph: Data, masked_graphs: List[Data]) -> to
 def get_uncommon_att(att: torch.Tensor, uncommon_atom_idx: list) -> torch.Tensor:
     return att[uncommon_atom_idx] if len(uncommon_atom_idx) > 0 else torch.zeros(1)    
    
-def evaluate_gnn_explain_direction(data: MoleculeDataset, model: GNN):
+def evaluate_gnn_explain_direction(dataset: MoleculeDataset, data_test: Data, model: GNN):
     model.to('cpu')
     model.eval()
-    smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
-    cliff_dict = data.cliff_dict
+    smiles_test = [data_test[i].smiles for i in range(len(data_test))]
+    cliff_dict = dataset.cliff_dict
     gnn_direction_score = collections.defaultdict(list)
     gradcam_loss, inputxgrad_loss = 0., 0.
     num_pairs = 0
     featurizer = MolTensorizer()
     for smi in smiles_test:
+        print("smiles",smi)
         mmp_dicts = cliff_dict[smi]
         graph_i = featurizer.tensorize(smi)
         masked_graphs_i = featurizer.gen_masked_atom_feats(smi)
@@ -70,24 +73,24 @@ def evaluate_gnn_explain_direction(data: MoleculeDataset, model: GNN):
             gradcam_att_j = get_gradcam_att(model, graph_j)
             inputxgrad_att_j = get_inputxgrad_att(model, graph_j)
             diff_mask_j = get_graph_mask_att(model, graph_j, masked_graphs_j)
-
-            gnn_direction_score['gradcam'].append(1 if \
+            
+            gnn_direction_score['gradcam'].append((diff, smi, mmp_smi, 1 if \
                 (torch.sum(get_uncommon_att(gradcam_att_i, uncommon_atom_idx_i)) - \
                  torch.sum(get_uncommon_att(gradcam_att_j, uncommon_atom_idx_j))
                  ) * diff > 0 \
-                 else 0)            
-            gnn_direction_score['inputxgrad'].append(1 if \
+                 else 0))       
+            gnn_direction_score['inputxgrad'].append((diff, smi, mmp_smi, 1 if \
                 (torch.sum(get_uncommon_att(inputxgrad_att_i, uncommon_atom_idx_i)) - \
                  torch.sum(get_uncommon_att(inputxgrad_att_j, uncommon_atom_idx_j))
                  ) * diff > 0 \
-                 else 0)
+                 else 0))
 
-
-            gnn_direction_score['mask'].append(1 if \
+            gnn_direction_score['mask'].append((diff, smi, mmp_smi, 1 if \
                 (torch.sum(get_uncommon_att(diff_mask_i, uncommon_atom_idx_i)) - \
                  torch.sum(get_uncommon_att(diff_mask_j, uncommon_atom_idx_j))
                  ) * diff > 0 \
-                 else 0)
+                 else 0))
+
             gradcam_loss += pairwise_ranking_loss(
                     (torch.sum(get_uncommon_att(gradcam_att_i, uncommon_atom_idx_i)) - \
                      torch.sum(get_uncommon_att(gradcam_att_j, uncommon_atom_idx_j))
@@ -98,10 +101,13 @@ def evaluate_gnn_explain_direction(data: MoleculeDataset, model: GNN):
                      torch.sum(get_uncommon_att(inputxgrad_att_j, uncommon_atom_idx_j))
                      ),
                     torch.tensor(diff)).item()
+        if num_pairs>0:
+            break
+    print("Total number of ground_truth explanations", num_pairs)
+    gradcam_score = np.mean([gnn_direction_score['gradcam'][i][3] for i in range(len(gnn_direction_score['gradcam']))])
+    inputxgrad_score = np.mean([gnn_direction_score['inputxgrad'][i][3] for i in range(len(gnn_direction_score['inputxgrad']))])
+    mask_score = np.mean([gnn_direction_score['mask'][i][3] for i in range(len(gnn_direction_score['mask']))])
 
-    gradcam_score = np.mean(gnn_direction_score['gradcam'])
-    inputxgrad_score = np.mean(gnn_direction_score['inputxgrad'])
-    mask_score = np.mean(gnn_direction_score['mask'])
     print("Total CradCAM attribution loss: {:.4f}".format(gradcam_loss))
     print("GradCAM Molecule averaged attribution loss: {:.4f}".format(gradcam_loss/len(smiles_test)))
     print("Pair averaged attribution loss: {:.4f}".format(gradcam_loss/num_pairs))
@@ -111,7 +117,7 @@ def evaluate_gnn_explain_direction(data: MoleculeDataset, model: GNN):
     print("gnn GradCAM direction score: {:.4f}".format(gradcam_score))
     print("gnn InputXGrad direction score: {:.4f}".format(inputxgrad_score))
     print("gnn mask score: {:.4f}".format(mask_score))
-    return {'gradcam': gradcam_score, 'inputxgrad': inputxgrad_score, 'mask': mask_score}
+    return {'gradcam': gradcam_score, 'inputxgrad': inputxgrad_score, 'mask': mask_score}, gnn_direction_score
 
 def evaluate_rf_explain_direction(data, model_rf):
     smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
@@ -134,3 +140,12 @@ def evaluate_rf_explain_direction(data, model_rf):
     print("Total number of ground_truth explanations", len(rf_score))
     print("rf direction score: ", np.mean(rf_score))
     return np.mean(rf_score)
+
+def run_evaluation(args, model, data_test):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
+    loss_func = torch.nn.MSELoss()
+    metric_func = get_metric_func(metric=args.metric)
+    test_score, test_cliff_score, explan_acc = predict(args, model, test_loader, loss_func, metric_func, device)
+    return test_score, test_cliff_score, explan_acc

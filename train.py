@@ -7,10 +7,12 @@ from argparse import Namespace
 from typing import List, Optional
 import numpy as np
 from rdkit.Chem import MolFromSmiles
+import gc
 import torch
 from torch_geometric.loader import DataLoader
+from torch_geometric.data import Data
 from torch_scatter import scatter
-from explain.GradCAM import GraphLayerGradCam
+from explain.explain_utils import process_layer_gradients_and_eval
 from utils import save_checkpoint, load_checkpoint
 from metrics import get_metric_func
 from dataset import MoleculeDataset
@@ -19,26 +21,26 @@ from utils import pairwise_ranking_loss, get_batch_indices
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from rf_utils import featurize_ecfp4
+
 N_TREES_LIST = [100, 250, 500, 1000]
 N_JOBS = int(os.getenv("LSB_DJOB_NUMPROC", multiprocessing.cpu_count()))
 print("Number of Jobs: ", N_JOBS)
 
 def train_test_rf(args: Namespace, data: MoleculeDataset):
-    smiles_train_init = [data.data_train[i].smiles for i in range(len(data.data_train))]
+    smiles_train = [data.data_train[i].smiles for i in range(len(data.data_train))]
+    smiles_val = [data.data_val[i].smiles for i in range(len(data.data_val))]
     smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
-    y_train_init = [data.data_train[i].target for i in range(len(data.data_train))]
-    y_test = [data.data_test[i].target for i in range(len(data.data_test))]
-    cliff_mols_test = [data.data_test[i].cliff for i in range(len(data.data_test))]
-    if args.split[1] == 0.0:
-        smiles_train, y_train = smiles_train_init, y_train_init
-        fps_val = None
-    else:
-        # further split data_train into train and val
-        smiles_train, smiles_val, y_train, y_val = train_test_split(smiles_train_init, y_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
-        fps_val = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_val]) 
 
+    y_train = [data.data_train[i].target for i in range(len(data.data_train))]
+    y_val = [data.data_val[i].target for i in range(len(data.data_val))]
+    y_test = [data.data_test[i].target for i in range(len(data.data_test))]
+
+    cliff_mols_test = [data.data_test[i].cliff for i in range(len(data.data_test))]
+    
     fps_train = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_train])
+    fps_val = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_val]) 
     fps_test = np.vstack([featurize_ecfp4(MolFromSmiles(sm)) for sm in smiles_test])
+
     metric_func = get_metric_func(metric=args.metric)
     if fps_val is not None:
         best_score = float('inf') if args.minimize_score else -float('inf')
@@ -71,33 +73,22 @@ def train_test_rf(args: Namespace, data: MoleculeDataset):
 
 def run_training(args: Namespace,
                  model: GNN, 
-                 data: MoleculeDataset, 
+                 data_train: List[Data], 
+                 data_val: List[Data],
                  ) -> List[float]:
     """
-    Trains a model and returns test scores on the model checkpoint with the highest validation score.
+    Trains a model and returns the model with the highest validation score.
     :param model: Model to train.
-    :param tr_fold: Training fold.
-    :param val_fold: Validation fold.
-    :param args: Arguments.
-    :return: A list of ensemble scores.
+    :param data_train: Training data.
+    :param data_val: Validation data.
+    :return: Model with the highest validation score.
     """
-    data_train_init, data_test, batched_train_init, batched_data_test = data.data_train, data.data_test, data.batched_data_train, data.batched_data_test
-    if args.split[1] == 0.0:
-        data_train, data_val = data_train_init, data_test
-        batched_train, batched_val = batched_train_init, batched_data_test
-    else:
-        # further split data_train into train and val
-        data_train, data_val = train_test_split(data_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
-        batched_train, batched_val = train_test_split(batched_train_init, test_size=args.split[1]/(1.0-args.split[2]), shuffle=True, random_state=args.seed)
-
     train_loader = DataLoader(data_train, batch_size = args.batch_size, shuffle=False)
     val_loader = DataLoader(data_val, batch_size = args.batch_size, shuffle=False)
 
-    batched_train_loader = DataLoader(batched_train, batch_size = args.batch_size, shuffle=False)
-    batched_val_loader = DataLoader(batched_val, batch_size = args.batch_size, shuffle=False)
-
     loss_func = torch.nn.MSELoss()
-    metric_func = get_metric_func(metric=args.metric)
+    metric = args.metric
+    metric_func = get_metric_func(metric=metric)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=args.factor, patience=args.patience, min_lr=args.min_lr)
 
@@ -105,213 +96,153 @@ def run_training(args: Namespace,
     losses = collections.defaultdict(list)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
 
     for epoch in range(args.epochs):
         s_time = time.time()
-        train_losses = train(args, model, train_loader, batched_train_loader, loss_func, optimizer, device)
+        train_losses = train(args, model, train_loader, loss_func, optimizer, device)
         t_time = time.time() - s_time
         s_time = time.time()
-        val_score, val_losses = evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func, device)
+        val_score, val_loss = evaluate(args, model, val_loader, loss_func, metric_func, device)
         v_time = time.time() - s_time
-        scheduler.step(val_losses['val'][0])
+        scheduler.step(val_score)
 
         losses['train'].append(train_losses['train'][0])
-        losses['val'].append(val_losses['val'][0])
         losses['train_pred'].append(train_losses['pred'][0])
-        losses['val_pred'].append(val_losses['pred'][0])
-        #losses['att'].append(train_losses['att'][0])
-        #losses['att'].append(val_losses['att'][0])
-        losses['train_direction'].append(train_losses['direction'][0])
-        losses['val_direction'].append(val_losses['direction'][0])
-        losses['train_sparsity'].append(train_losses['sparsity'][0])
-        losses['val_sparsity'].append(val_losses['sparsity'][0])
+        losses['train_explanation'].append(train_losses['explanation'][0])
+        losses['val'].append(val_loss)
 
         print('Epoch: {:04d}'.format(epoch),
                 'loss_train: {:.6f}'.format(train_losses['train'][0]),
-                'loss_val: {:.6f}'.format(val_losses['val'][0]),
                 'pred_train: {:.6f}'.format(train_losses['pred'][0]),
-                'pred_val: {:.6f}'.format(val_losses['pred'][0]),
-                #'att_train: {:.6f}'.format(train_losses['att'][0]),
-                #'att_val: {:.6f}'.format(val_losses['att'][0]),
-                'direction_train: {:.6f}'.format(train_losses['direction'][0]),
-                'direction_val: {:.6f}'.format(val_losses['direction'][0]),
-                'sparsity_train: {:.6f}'.format(train_losses['sparsity'][0]),
-                'sparsity_val: {:.6f}'.format(val_losses['sparsity'][0]),
+                'explanation_train: {:.6f}'.format(train_losses['explanation'][0]),
+                'weighted_explanation_train: {:.6f}'.format(train_losses['weighted_explanation'][0]),
+                'loss_val: {:.6f}'.format(val_loss),
                 '{:.4s}_val: {:.4f}'.format(args.metric, val_score),
-                # 'auc_val: {:.4f}'.format(avg_val_score),
                 'cur_lr: {:.5f}'.format(optimizer.param_groups[0]['lr']),
                 't_time: {:.4f}s'.format(t_time),
                 'v_time: {:.4f}s'.format(v_time))
-        if args.opt_goal != 'MSE':
-            val_score = val_losses['val'][0]
-            metric = 'loss'
-        else:
-            metric = args.metric
+        # Save model checkpoint if improved validation score
         if args.minimize_score and val_score < best_score or \
                 not args.minimize_score and val_score > best_score:
-            best_score, best_epoch = val_score, epoch
-            best_model = deepcopy(model)        
-            if args.save_checkpoints:
+            best_score, best_epoch = val_score, epoch  
+            if args.save_checkpoints == True: 
                 if args.checkpoint_path is None:
-                    args.checkpoint_path = os.path.join(args.save_dir, f'{args.loss}_model.pt')
-                save_checkpoint(args.checkpoint_path, model, args)                
-                print('saved checkpoint')
-        if epoch - best_epoch > args.early_stop_epoch:
+                    args.checkpoint_path = os.path.join(args.save_dir, f'{args.dataset}_{args.loss}_model_{args.seed}_ablate_uncom.pt')
+                save_checkpoint(args.checkpoint_path, model, args)              
+        if args.early_stop_epoch != None and epoch - best_epoch > args.early_stop_epoch:
             break
     print('best epoch: {:04d}'.format(best_epoch))
     print('best val {:.4s}: {:.4f}'.format(metric, best_score))
+    
+    del model
+    gc.collect()
+    torch.cuda.empty_cache()
+    return best_score
 
-    test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
-    batched_test_loader = DataLoader(batched_data_test, batch_size = args.batch_size, shuffle=False)
-    test_score, test_cliff_score  = predict(args, best_model, test_loader, loss_func, metric_func, device)
-    return best_model, test_score, test_cliff_score, losses
 
-
-def train(args, model, train_loader, batched_train_loader, loss_func, optimizer, device):
+def train(args, model, train_loader, loss_func, optimizer, device):
     """
     Trains a model for an epoch.
     """
-    model.train().to(device)
+    model.train()
     losses = collections.defaultdict(list)
-    total_loss, pred_loss, att_loss, direct_loss, sparsity_loss = 0.0, 0.0, 0.0, 0.0, 0.0    
+    total_loss, pred_loss, explanation_loss, weighted_explanation_loss = 0.0, 0.0, 0.0, 0.0 
     graph_count = 0
-    att_loss_weight = float(args.att_loss_weight)
-    sparsity_loss_weight = float(args.sparsity_loss_weight)
-    direction_loss_weight = float(args.direction_loss_weight)
-
-    for data, batched_data in zip(train_loader, batched_train_loader):
-        x, edge_index = data.x.to(device), data.edge_index.to(device)
-        edge_attr = data.edge_attr.to(device)
-        batch = data.batch.to(device)
-        y = data.target.to(device)
-        ####################
-        # this will determine whether cliff pair will be used in training
-        if args.show_direction_loss:
-            batched_x, batched_edge_attr = batched_data.x.to(device), batched_data.edge_attr.to(device)
-            batched_edge_index = batched_data.edge_index.to(device)
-            batched_batch = batched_data.batch.to(device)
-            mini_batch = batched_data.mini_batch.to(device)
-            ### attribution ####
-            model.eval()
-            explain_method = GraphLayerGradCam(model, model.convs[-1])
-            att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, mini_batch), return_gradients=args.return_gradients)
-            att = att.reshape(-1, 1)
-            ### sparsity ####
-            sparsity_prior = torch.norm(att, p=args.norm)
-            sparsity_loss += sparsity_prior.item()
-            ####################
-            masked_att = att*batched_data.atom_mask.to(device)
-            masked_att = scatter(masked_att, batched_batch, dim=0, reduce='add') 
-            direction_prior = 0.0
-            direction_prior += pairwise_ranking_loss(masked_att, batched_data.potency_diff.reshape(-1, batched_data.atom_mask.shape[1]).to(device))
-            direct_loss += direction_prior.item()
-        ####################
-        model.train()
-        out = model(x=x, edge_attr=edge_attr, edge_index=edge_index, batch=batch)
-
-        loss = loss_func(out.reshape(-1, 1), y.reshape(-1, 1))
+    com_loss_weight, uncom_loss_weight = float(args.com_loss_weight), float(args.uncom_loss_weight)
+    ## New implementation ##
+    for data in train_loader:
+        data.to(device)
+        target = data.target.reshape(-1, 1).to(device)
         if args.loss == 'MSE':
-            train_loss = loss 
-        elif args.loss == 'MSE+sparsity':
-            train_loss = loss + sparsity_loss_weight*sparsity_prior
-        elif args.loss == 'MSE+direction+sparsity':
-            train_loss = loss + direction_loss_weight*direction_prior + sparsity_loss_weight*sparsity_prior
-        elif args.loss == 'MSE+direction':  
-            train_loss = loss + direction_loss_weight*direction_prior
-        
+            output = model(data.x, data.edge_attr, data.edge_index.type(torch.LongTensor).to(device), data.batch.to(device))
+            common_prior = uncom_prior = 0.
+        else:
+            potency_diff = data.potency_diff.to(device)
+            output, sum_uncom_att, sum_common_att = model.explanation_forward(data)
+            uncom_prior = pairwise_ranking_loss(sum_uncom_att, potency_diff)
+            common_prior = torch.square(sum_common_att).sum()
+            explanation_loss += uncom_prior.item() + common_prior.item()
+            weighted_explanation_loss += com_loss_weight*common_prior.item() + uncom_loss_weight*uncom_prior.item()
+
+        loss = loss_func(output.reshape(-1, 1), target)
+        train_loss = loss + com_loss_weight*common_prior + uncom_loss_weight*uncom_prior
         optimizer.zero_grad()
         train_loss.backward()
         optimizer.step()
-        total_loss += train_loss.item()
-        pred_loss += loss.item()
+        total_loss += train_loss.item()*data.num_graphs
+        pred_loss += loss.item()*data.num_graphs
         graph_count += data.num_graphs
-    
     losses['train'].append(total_loss/graph_count)
     losses['pred'].append(pred_loss/graph_count)
-    losses['direction'].append(direct_loss/graph_count)
-    losses['sparsity'].append(sparsity_loss/graph_count)
+    losses['explanation'].append(explanation_loss/graph_count)
+    losses['weighted_explanation'].append(weighted_explanation_loss/graph_count)
 
     return losses
 
-def evaluate(args, model, val_loader, batched_val_loader, loss_func, metric_func, device):
-    model.eval().to(device)
+def evaluate(args, model, val_loader, loss_func, metric_func, device):
+    model.eval()
     losses = collections.defaultdict(list)
-    total_loss, pred_loss, att_loss, direct_loss, sparsity_loss = 0.0, 0.0, 0.0, 0.0, 0.0
-    att_loss_weight, sparsity_loss_weight, direction_loss_weight = float(args.att_loss_weight), float(args.sparsity_loss_weight), float(args.direction_loss_weight)
+    total_loss, pred_loss = 0.0, 0.0
     y_pred, y_true = [], []
     graph_count = 0
     with torch.no_grad():
-        for data, batched_data in zip(val_loader, batched_val_loader):
+        for data in val_loader:
             x, edge_index = data.x.to(device), data.edge_index.type(torch.LongTensor).to(device)
             edge_attr = data.edge_attr.to(device)
             batch = data.batch.to(device)
-            y = data.target.to(device)
-            ####################
-            if args.show_direction_loss:
-                batched_x, batched_edge_attr = batched_data.x.to(device), batched_data.edge_attr.to(device)
-                batched_edge_index = batched_data.edge_index.to(device)
-                batched_batch = batched_data.batch.to(device)
-                mini_batch = batched_data.mini_batch.to(device)
-                ### attribution ####
-                explain_method = GraphLayerGradCam(model, model.convs[-1])
-                att = explain_method.attribute((batched_x, batched_edge_attr), additional_forward_args=(batched_edge_index, mini_batch), return_gradients=args.return_gradients)
-                att = att.reshape(-1, 1)
-                ####################            
-                sparsity_prior = torch.norm(att, p=args.norm)
-                sparsity_loss += sparsity_prior.item()
-                ####################   
-                masked_att = att*batched_data.atom_mask.to(device)
-                masked_att = scatter(masked_att, batched_batch, dim=0, reduce='add') 
-                direction_prior = 0.0
-                direction_prior += pairwise_ranking_loss(masked_att, batched_data.potency_diff.reshape(-1, batched_data.atom_mask.shape[1]).to(device))
-                direct_loss += direction_prior.item()
-            out = model(x=x, edge_attr=edge_attr, edge_index=edge_index, batch=batch)
-            ####################
-            loss = loss_func(out.reshape(-1, 1), y.reshape(-1, 1))
-            if args.loss == 'MSE':
-                val_loss = loss 
-            elif args.loss == 'MSE+sparsity':
-                val_loss = loss + sparsity_loss_weight*sparsity_prior
-            elif args.loss == 'MSE+direction+sparsity':
-                val_loss = loss + direction_loss_weight*direction_prior + args.sparsity_loss_weight*sparsity_prior
-            elif args.loss == 'MSE+direction':  
-                val_loss = loss + direction_loss_weight*direction_prior
-            #att_loss +=  attribution_prior.item()
-            total_loss += val_loss.item()
+            target = data.target.to(device)
+            out = model(x, edge_attr, edge_index, batch)
+            loss = loss_func(out.reshape(-1, 1), target.reshape(-1, 1))
+            total_loss += loss.item()*data.num_graphs
             graph_count += data.num_graphs
-            pred_loss += loss.item()
             y_pred += list(out.cpu().detach().reshape(-1))
-            y_true += list(y.cpu().detach().reshape(-1))
+            y_true += list(target.cpu().detach().reshape(-1))
     val_score = metric_func(y_true, y_pred)
-    
-    losses['val'].append(total_loss/graph_count)
-    losses['pred'].append(pred_loss/graph_count)
-    losses['direction'].append(direct_loss/graph_count)
-    losses['sparsity'].append(sparsity_loss/graph_count)
 
-    return val_score, losses
+    return val_score, total_loss/graph_count
 
 def predict(args, model, test_loader, loss_func, metric_func, device):
-    model.eval().to(device)
+    model.eval()
     y_pred, y_true, cliffs = [], [], []
-    test_batch_loss =  0.0
+    total_loss, explanation_loss, weighted_explanation_loss =  0.0, 0.0, 0.0
+    graph_count, num_explanation, num_true_explanation = 0, 0, 0
+    com_loss_weight, uncom_loss_weight = float(args.com_loss_weight), float(args.uncom_loss_weight)
     for data in test_loader:
-        x, edge_index = data.x.to(device), data.edge_index.type(torch.LongTensor).to(device)
-        edge_attr = data.edge_attr.to(device)
-        batch = data.batch.to(device)
+        data.to(device)
+        
+        target = data.target.reshape(-1, 1).to(device)
         cliffs += data.cliff.data.cpu().tolist()
-        y = data.target.to(device)
-        out = model(x, edge_attr, edge_index, batch)
-        loss = loss_func(out.reshape(-1, 1), y.reshape(-1, 1))
-        test_batch_loss += loss.item()
-        y_pred += list(out.cpu().detach().reshape(-1))
-        y_true += list(y.cpu().detach().reshape(-1))
+        potency_diff = data.potency_diff.to(device)
+        output, sum_uncom_att, common_att = model.explanation_forward(data)
+        uncom_prior = pairwise_ranking_loss(sum_uncom_att, potency_diff)
+        num_true_explanation += ((sum_uncom_att * potency_diff) > 0).sum().item()
+        common_prior = torch.square(common_att).sum()
+        loss = loss_func(output.reshape(-1, 1), target)
+
+        explanation_loss += uncom_prior.item() + common_prior.item()
+        weighted_explanation_loss += com_loss_weight*common_prior.item() + uncom_loss_weight*uncom_prior.item()      
+
+        num_explanation += torch.count_nonzero(potency_diff).item()
+        total_loss += loss.item()*data.num_graphs
+        y_pred += list(output.cpu().detach().reshape(-1))
+        y_true += list(target.cpu().detach().reshape(-1))
+
     test_score = metric_func(y_true, y_pred)
     y_pred_cliff = [y_pred[i] for i in range(len(y_pred)) if cliffs[i]==1]
     y_true_cliff = [y_true[i] for i in range(len(y_true)) if cliffs[i]==1]
     test_cliff_score = metric_func(y_true_cliff, y_pred_cliff)
     print('test {:.4s}: {:.4f}'.format(args.metric, test_score))
     print('test cliff {:.4s}: {:.4f}'.format(args.metric, test_cliff_score))
-    
-    return test_score, test_cliff_score
-
+    # get r2
+    r2_metric = get_metric_func(metric='r2')
+    r2_test = r2_metric(y_true, y_pred)
+    r2_cliff_test = r2_metric(y_true_cliff, y_pred_cliff)
+    print('test r2: {:.4f}'.format(r2_test))
+    print('test cliff r2: {:.4f}'.format(r2_cliff_test))
+    # explanation accuracy
+    explan_acc = num_true_explanation/num_explanation
+    print('explanation accuracy: {:.4f}'.format(explan_acc))
+    print('explanation loss: {:.4f}'.format(explanation_loss))
+    print('weighted explanation loss: {:.4f}'.format(weighted_explanation_loss))
+    return test_score, test_cliff_score, explan_acc

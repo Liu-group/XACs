@@ -1,7 +1,7 @@
 ######################################
 ######## modified from caputm ########  
 ######################################
-from typing import Any, Callable, cast, List, Tuple, Union
+from typing import Any, Dict, Callable, cast, List, Tuple, Union
 
 import torch
 from captum._utils.common import (
@@ -13,7 +13,7 @@ from captum._utils.typing import (
     ModuleOrModuleList,
     TargetType,
 )
-from torch import Tensor
+from torch import Tensor, device
 from torch.nn import Module
 from captum._utils.gradient import (
     _forward_layer_distributed_eval,
@@ -211,4 +211,108 @@ def compute_layer_gradients_and_eval(
                 cast(Tuple[Tensor, ...], all_outputs),
                 inp_grads,
             )
+    return layer_grads, all_outputs  # type: ignore
+
+def process_layer_gradients_and_eval(
+    saved_layer: Dict[Module, Dict[int, Tuple[Tensor, ...]]],
+    output: Dict[Module, Dict[device, Tuple[Tensor, ...]]],
+    forward_fn: Callable,
+    layer: ModuleOrModuleList,
+    target_ind: TargetType = None,
+    additional_forward_args: Any = None,
+    device_ids: Union[None, List[int]] = None,
+    attribute_to_layer_input: bool = False,
+    output_fn: Union[None, Callable] = None,
+) -> Union[
+    Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]],
+    Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...], Tuple[Tensor, ...]],
+    Tuple[List[Tuple[Tensor, ...]], List[Tuple[Tensor, ...]]],
+]:
+    r"""
+    Modified version of compute_layer_gradients_and_eval from captum.
+    Args:
+
+        forward_fn: forward function. This can be for example model's
+                    forward function.
+        layer:      Layer for which gradients / output will be evaluated.
+        target_ind: Index of the target class for which gradients
+                    must be computed (classification only).
+        output_fn:  An optional function that is applied to the layer inputs or
+                    outputs depending whether the `attribute_to_layer_input` is
+                    set to `True` or `False`
+        args:       Additional input arguments that forward function requires.
+                    It takes an empty tuple (no additional arguments) if no
+                    additional arguments are required
+
+
+    Returns:
+        tuple[**gradients**, **evals**]:
+        - **gradients**:
+            Gradients of output with respect to target layer output.
+        - **evals**:
+            Target layer output for given input.
+    """
+    with torch.autograd.set_grad_enabled(True):
+        device_ids = _extract_device_ids(forward_fn, saved_layer, device_ids)
+
+        # Identifies correct device ordering based on device ids.
+        # key_list is a list of devices in appropriate ordering for concatenation.
+        # If only one key exists (standard model), key list simply has one element.
+        key_list = _sort_key_list(
+            list(next(iter(saved_layer.values())).keys()), device_ids
+        )
+        all_outputs: Union[Tuple[Tensor, ...], List[Tuple[Tensor, ...]]]
+        if isinstance(layer, Module):
+            all_outputs = _reduce_list(
+                [
+                    saved_layer[layer][device_id]
+                    if output_fn is None
+                    else output_fn(saved_layer[layer][device_id])
+                    for device_id in key_list
+                ]
+            )
+        else:
+            all_outputs = [
+                _reduce_list(
+                    [
+                        saved_layer[single_layer][device_id]
+                        if output_fn is None
+                        else output_fn(saved_layer[single_layer][device_id])
+                        for device_id in key_list
+                    ]
+                )
+                for single_layer in layer
+            ]
+        all_layers: List[Module] = [layer] if isinstance(layer, Module) else layer
+        grad_inputs = tuple(
+            layer_tensor
+            for single_layer in all_layers
+            for device_id in key_list
+            for layer_tensor in saved_layer[single_layer][device_id]
+        )
+        ## Modify the following line to use the let graph be created
+        saved_grads = torch.autograd.grad(torch.unbind(output), grad_inputs, create_graph=True)
+        offset = 0
+        all_grads: List[Tuple[Tensor, ...]] = []
+        for single_layer in all_layers:
+            num_tensors = len(next(iter(saved_layer[single_layer].values())))
+            curr_saved_grads = [
+                saved_grads[i : i + num_tensors]
+                for i in range(
+                    offset, offset + len(key_list) * num_tensors, num_tensors
+                )
+            ]
+            offset += len(key_list) * num_tensors
+            if output_fn is not None:
+                curr_saved_grads = [
+                    output_fn(curr_saved_grad) for curr_saved_grad in curr_saved_grads
+                ]
+
+            all_grads.append(_reduce_list(curr_saved_grads))
+
+        layer_grads: Union[Tuple[Tensor, ...], List[Tuple[Tensor, ...]]]
+        layer_grads = all_grads
+        if isinstance(layer, Module):
+            layer_grads = all_grads[0]
+
     return layer_grads, all_outputs  # type: ignore
