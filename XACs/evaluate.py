@@ -1,18 +1,18 @@
 import collections  
 import torch
 from torch_geometric.data import Data
-from rf_utils import diff_mask
-from featurization import MolTensorizer
-from explain.GradCAM import GraphLayerGradCam
-from explain.InputXGrad import InputXGradient
+from XACs.utils import diff_mask
+from XACs.featurization import MolTensorizer
+#from explain.GradCAM import GraphLayerGradCam
+#from explain.InputXGrad import InputXGradient
 import numpy as np
-from utils import pairwise_ranking_loss
-from dataset import MoleculeDataset
-from GNN import GNN
+from XACs.utils import pairwise_ranking_loss
+from XACs.dataset import MoleculeDataset
+from XACs.GNN import GNN
 from typing import List
-from train import predict
+from XACs.train import predict
 from torch_geometric.loader import DataLoader
-from metrics import get_metric_func
+from XACs.utils import get_metric_func
 
 def get_gradcam_att(model: GNN, graph: Data) -> torch.Tensor:
     with torch.no_grad():
@@ -119,9 +119,8 @@ def evaluate_gnn_explain_direction(dataset: MoleculeDataset, data_test: Data, mo
     print("gnn mask score: {:.4f}".format(mask_score))
     return {'gradcam': gradcam_score, 'inputxgrad': inputxgrad_score, 'mask': mask_score}, gnn_direction_score
 
-def evaluate_rf_explain_direction(data, model_rf):
-    smiles_test = [data.data_test[i].smiles for i in range(len(data.data_test))]
-    cliff_dict = data.cliff_dict
+def evaluate_rf_explain_direction(cliff_dict, data_test, model_rf):
+    smiles_test = [data_test[i].smiles for i in range(len(data_test))]
     rf_score = []
     for smi in smiles_test:
         mmp_dicts = cliff_dict[smi]

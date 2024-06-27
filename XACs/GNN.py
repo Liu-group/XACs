@@ -20,7 +20,7 @@ from torch_geometric.nn import (
 )
 from torch_scatter import scatter
 from captum._utils.gradient import _forward_layer_distributed_eval
-from explain.explain_utils import process_layer_gradients_and_eval
+from XACs.utils.explain_utils import process_layer_gradients_and_eval
 
 class GNN(torch.nn.Module):
     def __init__(
@@ -34,6 +34,7 @@ class GNN(torch.nn.Module):
         pool: str = "mean",
         dropout_rate: float = 0.5,
         attribute_to_last_layer: bool = True,
+        normalize_att: bool = False,
     ):
         super(GNN, self).__init__()
         (
@@ -45,6 +46,7 @@ class GNN(torch.nn.Module):
             self.conv_name,
             self.dropout,
             self.attribute_to_last_layer,
+            self.normalize_att,
         ) = (
             num_node_features,
             num_edge_features,
@@ -54,6 +56,7 @@ class GNN(torch.nn.Module):
             conv_name,
             dropout_rate,
             attribute_to_last_layer,
+            normalize_att,
         )
         self.node_emb = Lin(self.num_node_features, self.hidden_dim)
         self.edge_emb = Lin(self.num_edge_features, self.hidden_dim)
@@ -185,13 +188,13 @@ class GNN(torch.nn.Module):
         #pool_grad = tuple(scatter(layer_gradients, batched_batch, dim=0, reduce='mean') for layer_gradients in layer_gradients)[0].reshape(-1, 1)
         #att = tuple(torch.einsum("ij, j -> i", layer_evals, pool_grad) 
                     #for layer_evals, pool_grad in zip(layer_evals, pool_grad))[0].reshape(-1, 1)
-
-
+        if self.normalize_att:
+            att = (att - att.min()) / (att.max() - att.min())
+        
         uncom_att, common_att = att*uncom_mask, att*common_mask
         sum_uncom_att = scatter(uncom_att, batched_batch, dim=0, reduce='add')
         #sum_common_att = scatter(common_att, batched_batch, dim=0, reduce='add')
 
         assert graph_mask.shape[0] == output.shape[0], "graph mask and output shape mismatch"
         output = output.reshape(-1, 1)[graph_mask==1.]
-
         return output, sum_uncom_att, common_att

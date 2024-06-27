@@ -1,31 +1,28 @@
 import os
-from parsing import get_args
-from dataset import MoleculeDataset, pack_data
-from train import run_training, train_test_rf, evaluate
-from evaluate import run_evaluation
-from GNN import GNN
-from evaluate import evaluate_gnn_explain_direction, evaluate_rf_explain_direction, run_evaluation
+from XACs.dataset import MoleculeDataset, pack_data
+from XACs.train import run_training, evaluate
+from XACs.evaluate import run_evaluation
+from XACs.GNN import GNN
+from XACs.evaluate import evaluate_gnn_explain_direction, evaluate_rf_explain_direction, run_evaluation
 from cross_validation import cross_validate
-from utils import set_seed, load_checkpoint
+from XACs.utils import set_seed, load_checkpoint, load_pickle, get_args, SEARCH_SPACE
 import torch
 from hypertune import hyperopt_search, grid_search
 from hyperopt import space_eval
-from utils import load_pickle
-from const import SEARCH_SPACE
 import collections
 import numpy as np
 from copy import deepcopy
-
 torch.set_default_tensor_type(torch.DoubleTensor)
 
 if __name__ == '__main__':
     args = get_args()
     args.save_dir = f'./{args.data_path}/{args.dataset}'
+    sim_thre = args.sim_threshold
     dataset = MoleculeDataset(args.dataset, args.data_path)   
+    dataset.get_cliffs(args.sim_threshold)
     args.num_node_features=dataset.num_node_features
     args.num_edge_features=dataset.num_edge_features 
-
-    if args.use_opt_params: 
+    if args.use_gnn_opt_params: 
         config_file = os.path.join(args.config_dir, f"{args.dataset}.pkl")
         assert os.path.exists(config_file), f"Optimal parameters for {args.dataset} not found!"
         if os.path.exists(config_file):
@@ -37,11 +34,12 @@ if __name__ == '__main__':
             print(f"Best parameters for {args.dataset} loaded!")
         else:
             print(f"Best parameters for {args.dataset} not found! Using default parameters...")
+    if args.use_opt_xweight:
         config_file_exweight = os.path.join(args.config_dir, f"{args.dataset}_exweight.pkl")
         if os.path.exists(config_file_exweight):
             best_params = load_pickle(config_file_exweight)
             print(f"Best explanation weight for {args.dataset} loaded!")
-            setattr(args, 'com_loss_weight', best_params['weight'])
+            setattr(args, 'com_loss_weight', 0.)
             setattr(args, 'uncom_loss_weight', best_params['weight'])
             print(f"com_loss_weight: {args.com_loss_weight}")
             print(f"uncom_loss_weight: {args.uncom_loss_weight}")
@@ -56,7 +54,10 @@ if __name__ == '__main__':
     if args.mode == 'train_test':
         set_seed(seed=args.seed)
         print(f"Processsing Dataset: {args.dataset}")
-        data_train, data_val, data_test = dataset.cliff_split(split_ratio=args.split, seed=42, save_split=True)
+        data_train, data_val, data_test = dataset.split_data(split_ratio=args.split, 
+                                                            split_method=args.split_method,
+                                                            seed=42, 
+                                                            save_split=True)
         if args.loss != 'MSE':
             data_train = pack_data(data_train, dataset.cliff_dict)
         # mols in test set is searched within the whole dataset for cliff pairs
@@ -75,32 +76,29 @@ if __name__ == '__main__':
         print("Testing...")
         best_model = load_checkpoint(args)
         test_score, test_cliff_score, _ = run_evaluation(args, best_model, data_test)
-        
-        if args.contrast2rf:
-            print("Running Random Forest...")
-            model_rf, rf_test_score, rf_test_cliff_score = train_test_rf(args, dataset)
-            
-            rf_score = evaluate_rf_explain_direction(dataset, model_rf)
+
 
     if args.mode == 'test':
         set_seed(seed=args.seed)
         model = load_checkpoint(args)
         print(f"Processsing Dataset: {args.dataset}")
-        _, _, data_test = dataset.cliff_split(split_ratio=args.split, seed=args.seed, save_split=True)
+        _, _, data_test = dataset.split_data(split_ratio=args.split, 
+                                            split_method=args.split_method,
+                                            seed=args.seed, 
+                                            save_split=True)
 
         #gnn_score, _ = evaluate_gnn_explain_direction(dataset, data_test, model)
 
         data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)
         test_score, test_cliff_score, _ = run_evaluation(args, model, data_test)
-        if args.contrast2rf:
-            print("Running Random Forest...")
-            model_rf, rf_test_score, rf_test_cliff_score = train_test_rf(args, data)
-            rf_score = evaluate_rf_explain_direction(data, model_rf)
         
     if args.mode == 'hypertune':
         set_seed(seed=args.seed)
         print(f"Processsing Dataset: {args.dataset}")
-        data_train, data_val, _ = dataset.cliff_split(split_ratio=args.split, seed=args.seed, save_split=True)
+        data_train, data_val, _ = dataset.split_data(split_ratio=args.split, 
+                                                    split_method=args.split_method,
+                                                    seed=args.seed, 
+                                                    save_split=True)
         print("Running hyperopt search...")
         if args.tune_type == 'grid_search':
             data_train = pack_data(data_train, dataset.cliff_dict)
@@ -119,7 +117,10 @@ if __name__ == '__main__':
             current_args = deepcopy(args)
             current_args.seed = init_seed + fold_num
             set_seed(seed=current_args.seed)
-            data_train, data_val, data_test = dataset.cliff_split(split_ratio=current_args.split, seed=42, save_split=True)
+            data_train, data_val, data_test = dataset.split_data(split_ratio=current_args.split, 
+                                                                split_method=current_args.split_method,
+                                                                seed=42, 
+                                                                save_split=True)
             if current_args.loss != 'MSE':
                 data_train = pack_data(data_train, dataset.cliff_dict)
             data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)
@@ -143,12 +144,6 @@ if __name__ == '__main__':
             all_scores['gnn_test_cliff_score'].append(test_cliff_score)
             all_scores['gnn_explanation_accuracy'].append(explan_acc)
             print()
-            if current_args.contrast2rf:
-                rf_model, rf_test_score, rf_test_cliff_score = train_test_rf(current_args, data)
-                rf_score = evaluate_rf_explain_direction(data, rf_model)
-                all_scores['rf_test_score'].append(rf_test_score)
-                all_scores['rf_test_cliff_score'].append(rf_test_cliff_score)
-                all_scores['rf_direction_score'].append(rf_score)
 
             del best_model
             torch.cuda.empty_cache()

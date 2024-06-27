@@ -80,10 +80,10 @@ def get_metric_func(metric: str) -> Callable[[Union[List[int], List[float]], Lis
     :return: A metric function which takes as arguments a list of targets and a list of predictions and returns.
     """
     # Note: If you want to add a new metric, please also update the parser argument --metric in parsing.py.
-    if metric == 'auc':
+    if metric == 'auroc':
         return roc_auc_score
 
-    if metric == 'prc-auc':
+    if metric == 'auprc':
         return prc_auc
 
     if metric == 'rmse':

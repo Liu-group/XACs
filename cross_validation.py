@@ -4,17 +4,16 @@ import collections
 import torch
 from sklearn.model_selection import StratifiedKFold
 from typing import List, Dict
-from utils import makedirs, set_seed, load_checkpoint
-from dataset import MoleculeDataset, pack_data
-from GNN import GNN
-from train import run_training, train_test_rf
-from evaluate import evaluate_gnn_explain_direction, evaluate_rf_explain_direction, run_evaluation
+from XACs.utils import makedirs, set_seed, load_checkpoint
+from XACs.dataset import MoleculeDataset, pack_data
+from XACs.GNN import GNN
+from XACs.train import run_training
+from XACs.evaluate import evaluate_gnn_explain_direction, evaluate_rf_explain_direction, run_evaluation
 from copy import deepcopy
 
 def cross_validate(args, dataset: MoleculeDataset):
     init_seed = args.seed
     save_dir = args.save_dir
-    threshold = args.threshold
     # Run training with different random seeds for each fold
     all_scores = collections.defaultdict(list)
     for fold_num in range(args.num_folds):
@@ -22,7 +21,10 @@ def cross_validate(args, dataset: MoleculeDataset):
         current_args = deepcopy(args)
         current_args.seed = init_seed + fold_num
         set_seed(seed=current_args.seed)
-        data_train, data_val, data_test = dataset.cliff_split(split_ratio=current_args.split, seed=42, save_split=True)
+        data_train, data_val, data_test = dataset.split_data(split_ratio=current_args.split, 
+                                                            split_method=current_args.split_method, 
+                                                            seed=42, 
+                                                            save_split=True)
         if current_args.loss != 'MSE':
             data_train = pack_data(data_train, dataset.cliff_dict)
         data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)
@@ -38,7 +40,7 @@ def cross_validate(args, dataset: MoleculeDataset):
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print("Total number of trainable params: ", total_params)    
         best_val_score = run_training(current_args, model, data_train, data_val)
-        best_model = load_checkpoint(current_args)
+        best_model = load_checkpoint(current_args) if current_args.save_checkpoints else model
         test_score, test_cliff_score, explan_acc = run_evaluation(current_args, best_model, data_test)
         #gnn_score, _ = evaluate_gnn_explain_direction(dataset, data_test, model)
         all_scores['gnn_test_score'].append(test_score)
@@ -47,12 +49,6 @@ def cross_validate(args, dataset: MoleculeDataset):
         #all_scores['gnn_gradcam_direction_score'].append(gnn_score['gradcam'])
         #all_scores['gnn_inputxgrad_direction_score'].append(gnn_score['inputxgrad'])
         #all_scores['gnn_graph_mask_direction_score'].append(gnn_score['mask'])
-        if current_args.contrast2rf:
-            rf_model, rf_test_score, rf_test_cliff_score = train_test_rf(current_args, data)
-            rf_score = evaluate_rf_explain_direction(data, rf_model)
-            all_scores['rf_test_score'].append(rf_test_score)
-            all_scores['rf_test_cliff_score'].append(rf_test_cliff_score)
-            all_scores['rf_direction_score'].append(rf_score)
 
         ## not sure if necessary; the reset_parameters() function should also be checked.
         del best_model, model

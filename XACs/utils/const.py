@@ -27,12 +27,14 @@ DATASETS = ['CHEMBL4616_EC50',  'CHEMBL4792_Ki', 'CHEMBL1871_Ki', 'CHEMBL2971_Ki
  'CHEMBL262_Ki','CHEMBL287_Ki','CHEMBL2034_Ki','CHEMBL3979_EC50','CHEMBL238_Ki','CHEMBL2835_Ki',
  'CHEMBL4005_Ki','CHEMBL237_EC50','CHEMBL264_Ki','CHEMBL214_Ki']
 
+MOLDATASETS = ['BACE', 'BBBP', 'Clintox', 'Esol', 'Freesolv', 'Lipo', 'SIDER',]
+
 SEARCH_SPACE = {
-        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
+        #"dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
         "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
-        "weight_decay": hp.choice("weight_decay", [0., 1e-3, 1e-4]),
-        "num_layers": hp.choice("num_layers", [2, 3, 5]),
-        "batch_size": hp.choice("batch_size", [32, 64, 128]), 
-        "hidden_dim": hp.choice("hidden_dim", [64, 128]),
-        "pool": hp.choice("pool", ["mean", "add"]),
+        #"weight_decay": hp.choice("weight_decay", [0., 1e-3, 1e-4]),
+        "num_layers": hp.choice("num_layers", [2, 4, 8]),# [2, 4, 8]
+        #"batch_size": hp.choice("batch_size", [32, 64, 128]), max
+        "hidden_dim": hp.choice("hidden_dim", [64, 128, 256]), # [64, 128, 256]
+        #"pool": hp.choice("pool", ["mean", "add"]), 
     }

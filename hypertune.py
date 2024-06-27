@@ -1,16 +1,13 @@
-from parsing import get_args
-from dataset import MoleculeDataset
-from train import run_training
-from GNN import GNN
+from XACs.utils import get_args, set_seed, save_pickle, load_pickle, SEARCH_SPACE
+from XACs.train import run_training
+from XACs.GNN import GNN
 from cross_validation import cross_validate
-from utils import set_seed
 import torch
 from itertools import product
 from functools import partial
 from hyperopt import hp, fmin, tpe, Trials, STATUS_OK
 from hyperopt.early_stop import no_progress_loss
 import numpy as np
-from utils import save_pickle, load_pickle
 torch.set_default_tensor_type(torch.DoubleTensor)
 import os, sys
 import gc
@@ -58,35 +55,25 @@ def grid_search(args, data_train, data_val):
 
 # hyperparameters tuning using hyperopt
 def hyperopt_search(args, data_train, data_val):
-    space = {
-        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
-        "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
-        "weight_decay": hp.choice("weight_decay", [0., 1e-3, 1e-4]),
-        "num_layers": hp.choice("num_layers", [2, 3, 5]),
-        "hidden_dim": hp.choice("hidden_dim", [64, 128]),
-        "batch_size": hp.choice("batch_size", [32, 64]), 
-        "pool": hp.choice("pool", ["mean", "add"]),
-    }
+    space = SEARCH_SPACE
     def objective(params, args, data_train, data_val):
-        args.lr = params["lr"]
-        args.weight_decay = params["weight_decay"]
-        args.num_layers = params["num_layers"]
-        args.hidden_dim = params["hidden_dim"]
-        args.batch_size = params["batch_size"]  
-        args.pool = params["pool"]
-        args.dropout_rate = params["dropout_rate"]
+        for key, value in params.items():
+            setattr(args, key, value)
         set_seed(seed=args.seed)
         model = GNN(num_node_features=args.num_node_features, 
             num_edge_features=args.num_edge_features,
-            num_layers=params["num_layers"],
-            hidden_dim=params["hidden_dim"],
-            dropout_rate=params["dropout_rate"],
-            pool=params["pool"],
+            num_layers=args.num_layers,
+            hidden_dim=args.hidden_dim,
+            dropout_rate=args.dropout_rate,
+            pool=args.pool,
             )
         print(f"Running training for {args.dataset} using {args.loss} with dp: {args.dropout_rate} and lr: {args.lr} and batch_size: {args.batch_size} and decay: {args.weight_decay} and layer:{args.num_layers} and hd: {args.hidden_dim} and pool: {args.pool}")
         with HiddenPrints():
-            score = run_training(args, model, data_train, data_val)
-        score = score if args.minimize_score else -score
+            try:
+                score = run_training(args, model, data_train, data_val)
+                score = score if args.minimize_score else -score
+            except RuntimeError:
+                score = float('inf') if args.minimize_score else 0
         del model, data_train, data_val
         gc.collect()
         torch.cuda.empty_cache()

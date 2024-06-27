@@ -6,11 +6,9 @@ import numpy as np
 from typing import List, Dict, Tuple
 import pickle
 import torch
-from dataset import MoleculeDataset
-from cliffs import ActivityCliffs, get_tanimoto_matrix
 from sklearn.cluster import SpectralClustering
 from sklearn.model_selection import train_test_split
-from GNN import GNN
+from XACs.GNN import GNN
 
 
 def set_seed(seed):

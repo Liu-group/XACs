@@ -9,26 +9,31 @@ from tqdm import tqdm
 import collections
 from rdkit.Chem.Scaffolds.MurckoScaffold import MakeScaffoldGeneric as GraphFramework
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
-from const import TIMEOUT_MCS
+from XACs.utils import TIMEOUT_MCS
 from multiprocessing import Pool, cpu_count
 
 NPROC = cpu_count()
 
 class ActivityCliffs:
-    """ Activity cliff class that computes cliff compounds based on MCS  """
+    """ Activity cliff class that find cliff pairs and
+        computes uncom and com part of substructurein between based on MCS """
     def __init__(self, 
                  smiles: List[str], 
-                 bioactivity: Union[List[float], np.array], 
+                 y_all: Union[List[float], np.array], 
+                 sim_thre: float = 0.9,
+                 dist_thre: float = 1.0,                 
                  dict_path: str = None,
-                 threshold: float = 0.9,
-                 potency_fold: float = 10,
                  ):
+        """
+        :param smiles: (list) list of SMILES strings
+        :param y_all: (list) list of predicted target
+        :param sim_thre: (float) the threshold of the structure similarity score
+        :param dist_thre: (float) the threshold of the target distance score
+        :param dict_path: (str) the path to save the dictionary
+        """
         self.smiles = smiles
         self.num_smiles = len(self.smiles)
-        self.bioactivity = list(bioactivity) if type(bioactivity) is not list else bioactivity
-        
-        self.threshold = threshold
-        self.potency_fold = potency_fold
+        self.y_all = list(y_all) if type(y_all) is not list else y_all
         if os.path.exists(dict_path):
             if os.path.isfile(dict_path):
                 with open(dict_path, 'rb') as f:
@@ -40,6 +45,15 @@ class ActivityCliffs:
 
         else:
             print(f"{dict_path} does not exist, generating the mcs_dict...")
+            self.sim_thre = sim_thre
+            self.dist_thre = dist_thre
+            if self.dist_thre == None:
+                dist_mat = np.abs(np.array(y_all).reshape(-1, 1) - np.array(y_all).reshape(1, -1))
+                self.dist_thre = np.mean(dist_mat[dist_mat > np.median(dist_mat)])
+            if self.sim_thre == None:
+                sim_mat = get_tanimoto_matrix(smiles)
+                self.sim_thre = np.mean(sim_mat[sim_mat > np.median(sim_mat)])
+
             self.dict_path = dict_path
             self.mcs_dict = self.find_cliffs()
             self.cliff_mols = self.get_cliff_mol_from_dict()
@@ -60,9 +74,7 @@ class ActivityCliffs:
     def find_cliffs(self):
         """
         Find activity cliffs based on the similarity and potency fold change. If satisfied,
-        get the matched molecular pair dictionary.
-        :param threshold: (float) the threshold of the common substructure fraction
-        :param potency_fold: (float) the potency fold change threshold
+        get the matched molecular pair dictionary.  
         :return: (np.array) returns a binary matrix where 1 means activity cliff compounds
         """
         mcs_dict = collections.defaultdict(list)
@@ -73,26 +85,26 @@ class ActivityCliffs:
         asyncresults = []
         for i in tqdm(range(self.num_smiles)):
             smiles_i = self.smiles[i]
-            bioactivity_i = self.bioactivity[i]
+            y_i = self.y_all[i]
             for j in range(i + 1, self.num_smiles):
                 smiles_j = self.smiles[j]
-                bioactivity_j = self.bioactivity[j]
+                y_j = self.y_all[j]
                 asyncresults.append([i, j] + [pool.apply_async(if_cliff, args=(smiles_i, 
                                                                      smiles_j, 
-                                                                     bioactivity_i, 
-                                                                     bioactivity_j, 
-                                                                     self.threshold, 
-                                                                     self.potency_fold)).get()])
+                                                                     y_i, 
+                                                                     y_j, 
+                                                                     self.sim_thre, 
+                                                                     self.dist_thre)).get()])
         for asyncresult in asyncresults:    
             i, j, (mmp_dict_i, mmp_dict_j) = asyncresult
             smiles_i, smiles_j = self.smiles[i], self.smiles[j]
-            y_i, y_j = -np.log10(self.bioactivity[i]), -np.log10(self.bioactivity[j])
+            y_i, y_j = self.y_all[i], self.y_all[j]#-np.log10(self.y[i]), -np.log10(self.y[j])
             if mmp_dict_i is not None:
                 mcs_dict[smiles_i][0]['is_cliff_mol'] = True
                 mcs_dict[smiles_j][0]['is_cliff_mol'] = True
                 if mmp_dict_i is not True:
-                    mmp_dict_i['potency_diff'] = y_i - y_j
-                    mmp_dict_j['potency_diff'] = y_j - y_i
+                    mmp_dict_i['potency_diff'] = (y_i - y_j) if type(y_i) is float else min((y_j - y_i), 1)
+                    mmp_dict_j['potency_diff'] = (y_j - y_i) if type(y_j) is float else min((y_i - y_j), 1)
                     mcs_dict[smiles_i].append(mmp_dict_i)
                     mcs_dict[smiles_j].append(mmp_dict_j)
             else:   
@@ -104,11 +116,11 @@ class ActivityCliffs:
         print(f'{self.dict_path}.pkl saved')
         return mcs_dict
 
-def if_cliff(smiles_i, smiles_j, bioactivity_i, bioactivity_j, threshold, potency_fold):
+def if_cliff(smiles_i, smiles_j, y_i, y_j, sim_threshold: float = 0.9, dist_threshold: float = 1.0):
     """Judge whether the pair of molecules is a cliff."""
-    diff = find_fc(bioactivity_i, bioactivity_j)
-    if diff > potency_fold:
-        mmp = moleculeace_similarity(smiles_i, smiles_j, similarity=threshold)
+    diff = abs(y_i - y_j)
+    if diff >= dist_threshold:
+        mmp = moleculeace_similarity(smiles_i, smiles_j, similarity='tanimoto', threshold=sim_threshold)
         if mmp:
             mmp_dict_i, mmp_dict_j = get_mcs(smiles_i, smiles_j)
             if mmp_dict_i is None:
@@ -150,11 +162,6 @@ def get_mcs(smiles_i, smiles_j):
     mmp_dict_i['atom_mask_i'], mmp_dict_j['atom_mask_i'] = [1 if i in uncommon_atom_idx_i else 0 for i in range(num_atoms_i)], [1 if i in uncommon_atom_idx_j else 0 for i in range(num_atoms_j)]
     mmp_dict_i['atom_mask_j'], mmp_dict_j['atom_mask_j'] = [1 if i in uncommon_atom_idx_j else 0 for i in range(num_atoms_j)], [1 if i in uncommon_atom_idx_i else 0 for i in range(num_atoms_i)]
     return mmp_dict_i, mmp_dict_j
-
-def find_fc(a: float, b: float):
-    """Get the fold change of to bioactivities"""
-
-    return max([a, b]) / min([a, b])
 
 def get_tanimoto_matrix(smiles: List[str], radius: int = 2, nBits: int = 1024):
     """ Calculates a matrix of Tanimoto similarity scores for a list of SMILES string"""
@@ -200,13 +207,16 @@ def get_levenshtein_score(smiles_i: str, smiles_j: str, normalize: bool = True):
     # Get from a distance to a similarity
     return score
 
-def moleculeace_similarity(smiles_i: str, smiles_j: str, similarity: float = 0.9):
+def moleculeace_similarity(smiles_i: str, smiles_j: str, similarity: str = 'tanimoto', threshold: float = 0.9):
     """ Calculate whether the pairs of molecules have a high tanimoto, scaffold, or SMILES similarity """
 
-    score_tani = get_tanimoto_score(smiles_i, smiles_j) >= similarity
-    score_scaff = get_scaffold_score(smiles_i, smiles_j) >= similarity
-    score_leve = get_levenshtein_score(smiles_i, smiles_j) >= similarity
-
-    return any([score_tani, score_scaff, score_leve])
+    if similarity == 'tanimoto':
+        score = get_tanimoto_score(smiles_i, smiles_j) >= threshold
+        return score
+    else:
+        score_tani = get_tanimoto_score(smiles_i, smiles_j) >= threshold
+        score_scaff = get_scaffold_score(smiles_i, smiles_j) >= threshold
+        score_leve = get_levenshtein_score(smiles_i, smiles_j) >= threshold
+        return any([score_tani, score_scaff, score_leve])
 
 
