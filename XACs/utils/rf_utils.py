@@ -3,7 +3,6 @@
 ############################
 from copy import deepcopy
 from typing import Callable, List, Tuple
-
 import numpy as np
 from rdkit.Chem import AllChem, DataStructs, MolFromSmiles, rdchem
 

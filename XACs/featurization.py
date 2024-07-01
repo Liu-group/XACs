@@ -5,9 +5,8 @@ from rdkit.Chem.rdchem import Atom, Bond, Mol
 from torch_geometric.data import Data
 from typing import List, Union
 import numpy as np
-from XACs.utils import ATOM_TYPES, BOND_TYPES, STEREO_TYPES
-import numpy as np
-from XACs.utils import gen_dummy_atoms
+from XACs.utils.const import ATOM_TYPES, BOND_TYPES, STEREO_TYPES
+from XACs.utils.rf_utils import gen_dummy_atoms
 
 def one_hot_encoding(x, allowable_set):
     """One-hot encoding.

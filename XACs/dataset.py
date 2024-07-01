@@ -3,14 +3,14 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 from tqdm import tqdm
 import torch
-from XACs.featurization import MolTensorizer
 import os
 import random
 from typing import List, Union
 from copy import deepcopy
 from torch_geometric.data import Batch, Data
+from XACs.featurization import MolTensorizer
 from XACs.cliffs import ActivityCliffs, get_tanimoto_matrix
-from XACs.utils import DATASETS, MOLDATASETS
+from XACs.utils.const import DATASETS, MOLDATASETS
 from typing import Optional
 from sklearn.model_selection import train_test_split
 

@@ -127,16 +127,23 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-archive/
+data/
+Data/
 MolACE_benchmark/
+QSAR_ACs/
 grover/
 explain/
 Benchmark_Data_Raw/
 benchmark/
 archive_files/
 results/
+results_rf/
+results_mol/
 TUDataset/
 visualization/
+tools/
+scripts/
+notebooks/
 *.npy
 *.out
 *.log
@@ -152,3 +159,4 @@ visualization/
 *.mat
 *.pyc
 run_task.py
+BBBP_utils.py

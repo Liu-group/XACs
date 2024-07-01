@@ -2,8 +2,6 @@
 ######## modified from caputm ########  
 ######################################
 from typing import Any, Dict, Callable, cast, List, Tuple, Union
-
-import torch
 from captum._utils.common import (
     _reduce_list,
     _run_forward,
@@ -19,7 +17,9 @@ from captum._utils.gradient import (
     _forward_layer_distributed_eval,
     _neuron_gradients,
     _extract_device_ids,
-)   
+)
+import torch   
+
 def compute_gradients(
     forward_fn: Callable,
     inputs: Union[Tensor, Tuple[Tensor, ...]],
@@ -290,7 +290,7 @@ def process_layer_gradients_and_eval(
             for device_id in key_list
             for layer_tensor in saved_layer[single_layer][device_id]
         )
-        ## Modify the following line to use the let graph be created
+        ## Modify the following line to let graph be created
         saved_grads = torch.autograd.grad(torch.unbind(output), grad_inputs, create_graph=True)
         offset = 0
         all_grads: List[Tuple[Tensor, ...]] = []

@@ -12,10 +12,10 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.data import Data
 from torch_scatter import scatter
 from XACs.utils.explain_utils import process_layer_gradients_and_eval
-from XACs.utils import save_checkpoint, load_checkpoint, get_metric_func
+from XACs.utils.utils import save_checkpoint, load_checkpoint, pairwise_ranking_loss
+from XACs.utils.metrics import get_metric_func
 from XACs.dataset import MoleculeDataset
 from XACs.GNN import GNN
-from XACs.utils import pairwise_ranking_loss, get_batch_indices
 from sklearn.model_selection import train_test_split
 
 def run_training(args: Namespace,

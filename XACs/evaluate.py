@@ -1,18 +1,18 @@
 import collections  
-import torch
-from torch_geometric.data import Data
-from XACs.utils import diff_mask
-from XACs.featurization import MolTensorizer
+from typing import List
 #from explain.GradCAM import GraphLayerGradCam
 #from explain.InputXGrad import InputXGradient
 import numpy as np
-from XACs.utils import pairwise_ranking_loss
+from XACs.utils.metrics import get_metric_func
+from XACs.utils.rf_utils import diff_mask
+from XACs.utils.utils import pairwise_ranking_loss
 from XACs.dataset import MoleculeDataset
+from XACs.featurization import MolTensorizer
 from XACs.GNN import GNN
-from typing import List
 from XACs.train import predict
+import torch
+from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
-from XACs.utils import get_metric_func
 
 def get_gradcam_att(model: GNN, graph: Data) -> torch.Tensor:
     with torch.no_grad():

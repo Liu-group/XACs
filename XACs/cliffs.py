@@ -9,7 +9,7 @@ from tqdm import tqdm
 import collections
 from rdkit.Chem.Scaffolds.MurckoScaffold import MakeScaffoldGeneric as GraphFramework
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
-from XACs.utils import TIMEOUT_MCS
+from XACs.utils.const import TIMEOUT_MCS
 from multiprocessing import Pool, cpu_count
 
 NPROC = cpu_count()

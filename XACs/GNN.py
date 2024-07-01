@@ -1,8 +1,6 @@
 from argparse import Namespace
 from typing import List, Optional
-import numpy as np
 import torch
-from torch.autograd import Variable
 from torch.nn import ModuleList, ReLU, Linear as Lin, Sequential as Seq, Sigmoid
 from torch_geometric.nn import (
     BatchNorm,

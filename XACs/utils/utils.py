@@ -5,10 +5,8 @@ from argparse import Namespace
 import numpy as np
 from typing import List, Dict, Tuple
 import pickle
-import torch
-from sklearn.cluster import SpectralClustering
-from sklearn.model_selection import train_test_split
 from XACs.GNN import GNN
+import torch
 
 
 def set_seed(seed):
