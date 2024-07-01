@@ -1,118 +1,0 @@
-Number of Jobs:  40
-Loading dataset CHEMBL237_Ki from Benchmark_Data/CHEMBL237_Ki/CHEMBL237_Ki.csv
-Loaded Benchmark_Data/CHEMBL237_Ki/mcs_dict_0.9.pkl
-  0%|          | 0/2603 [00:00<?, ?it/s]  1%|          | 31/2603 [00:00<00:08, 296.91it/s]  3%|▎         | 78/2603 [00:00<00:06, 396.37it/s]  5%|▌         | 135/2603 [00:00<00:05, 474.40it/s]  7%|▋         | 185/2603 [00:00<00:05, 482.82it/s]  9%|▉         | 241/2603 [00:00<00:04, 509.87it/s] 11%|█▏        | 298/2603 [00:00<00:04, 529.75it/s] 14%|█▍        | 360/2603 [00:00<00:04, 557.37it/s] 16%|█▌        | 418/2603 [00:00<00:03, 564.30it/s] 18%|█▊        | 475/2603 [00:00<00:03, 551.68it/s] 21%|██        | 537/2603 [00:01<00:03, 571.16it/s] 23%|██▎       | 598/2603 [00:01<00:03, 580.97it/s] 25%|██▌       | 657/2603 [00:01<00:03, 581.11it/s] 28%|██▊       | 717/2603 [00:01<00:03, 584.04it/s] 30%|██▉       | 780/2603 [00:01<00:03, 592.49it/s] 32%|███▏      | 840/2603 [00:01<00:02, 588.93it/s] 35%|███▍      | 899/2603 [00:01<00:02, 582.30it/s] 37%|███▋      | 958/2603 [00:01<00:02, 564.22it/s] 39%|███▉      | 1015/2603 [00:01<00:02, 554.24it/s] 41%|████      | 1071/2603 [00:02<00:03, 424.97it/s] 43%|████▎     | 1126/2603 [00:02<00:03, 453.38it/s] 45%|████▌     | 1176/2603 [00:02<00:03, 463.89it/s] 47%|████▋     | 1226/2603 [00:02<00:02, 465.13it/s] 49%|████▉     | 1277/2603 [00:02<00:02, 476.48it/s] 51%|█████     | 1330/2603 [00:02<00:02, 488.81it/s] 53%|█████▎    | 1388/2603 [00:02<00:02, 514.42it/s] 55%|█████▌    | 1441/2603 [00:02<00:02, 515.36it/s] 58%|█████▊    | 1500/2603 [00:02<00:02, 536.50it/s] 60%|█████▉    | 1555/2603 [00:02<00:01, 540.23it/s] 62%|██████▏   | 1610/2603 [00:03<00:01, 535.96it/s] 64%|██████▍   | 1664/2603 [00:03<00:01, 528.48it/s] 66%|██████▌   | 1721/2603 [00:03<00:01, 539.82it/s] 68%|██████▊   | 1776/2603 [00:03<00:01, 533.79it/s] 70%|███████   | 1830/2603 [00:03<00:01, 529.07it/s] 72%|███████▏  | 1883/2603 [00:03<00:01, 438.38it/s] 74%|███████▍  | 1932/2603 [00:03<00:01, 449.49it/s] 76%|███████▋  | 1985/2603 [00:03<00:01, 470.01it/s] 78%|███████▊  | 2039/2603 [00:03<00:01, 486.81it/s] 80%|████████  | 2095/2603 [00:04<00:01, 506.08it/s] 82%|████████▏ | 2147/2603 [00:04<00:00, 499.73it/s] 84%|████████▍ | 2198/2603 [00:04<00:00, 496.15it/s] 86%|████████▋ | 2249/2603 [00:04<00:00, 487.91it/s] 88%|████████▊ | 2299/2603 [00:04<00:00, 473.45it/s] 90%|█████████ | 2348/2603 [00:04<00:00, 476.10it/s] 92%|█████████▏| 2403/2603 [00:04<00:00, 494.88it/s] 94%|█████████▍| 2457/2603 [00:04<00:00, 506.45it/s] 96%|█████████▋| 2508/2603 [00:04<00:00, 486.58it/s] 98%|█████████▊| 2557/2603 [00:05<00:00, 486.51it/s]100%|██████████| 2603/2603 [00:05<00:00, 506.94it/s]
-Fold 0
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7424
-rf test cliff rmse: 0.8589
-rf test pcc: 0.8411
-Total number of ground_truth explanations 308
-rf direction score:  0.762987012987013
-Fold 1
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7182
-rf test cliff rmse: 0.7918
-rf test pcc: 0.8446
-Total number of ground_truth explanations 252
-rf direction score:  0.7222222222222222
-Fold 2
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.6671
-rf test cliff rmse: 0.7182
-rf test pcc: 0.8518
-Total number of ground_truth explanations 316
-rf direction score:  0.8512658227848101
-Fold 3
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7384
-rf test cliff rmse: 0.8257
-rf test pcc: 0.8348
-Total number of ground_truth explanations 296
-rf direction score:  0.8040540540540541
-Fold 4
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7190
-rf test cliff rmse: 0.7829
-rf test pcc: 0.8274
-Total number of ground_truth explanations 348
-rf direction score:  0.8189655172413793
-Fold 5
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.6871
-rf test cliff rmse: 0.7567
-rf test pcc: 0.8533
-Total number of ground_truth explanations 332
-rf direction score:  0.8192771084337349
-Fold 6
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.6580
-rf test cliff rmse: 0.6865
-rf test pcc: 0.8593
-Total number of ground_truth explanations 285
-rf direction score:  0.8280701754385965
-Fold 7
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7342
-rf test cliff rmse: 0.8124
-rf test pcc: 0.8493
-Total number of ground_truth explanations 329
-rf direction score:  0.7963525835866262
-Fold 8
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7010
-rf test cliff rmse: 0.7649
-rf test pcc: 0.8575
-Total number of ground_truth explanations 360
-rf direction score:  0.8444444444444444
-Fold 9
-best N_TREES: 0100
-best val rmse: 0.000000
-rf test rmse: 0.7645
-rf test cliff rmse: 0.8820
-rf test pcc: 0.8405
-Total number of ground_truth explanations 333
-rf direction score:  0.7597597597597597
-CHEMBL237_Ki ==> rf_test_score rmse = 0.712995 +/- 0.032601
-Seed 42 ==> rf_test_score rmse = 0.742367
-Seed 43 ==> rf_test_score rmse = 0.718227
-Seed 44 ==> rf_test_score rmse = 0.667072
-Seed 45 ==> rf_test_score rmse = 0.738439
-Seed 46 ==> rf_test_score rmse = 0.718986
-Seed 47 ==> rf_test_score rmse = 0.687097
-Seed 48 ==> rf_test_score rmse = 0.657994
-Seed 49 ==> rf_test_score rmse = 0.734245
-Seed 50 ==> rf_test_score rmse = 0.701006
-Seed 51 ==> rf_test_score rmse = 0.764519
-CHEMBL237_Ki ==> rf_test_cliff_score rmse = 0.787985 +/- 0.057107
-Seed 42 ==> rf_test_cliff_score rmse = 0.858912
-Seed 43 ==> rf_test_cliff_score rmse = 0.791771
-Seed 44 ==> rf_test_cliff_score rmse = 0.718211
-Seed 45 ==> rf_test_cliff_score rmse = 0.825708
-Seed 46 ==> rf_test_cliff_score rmse = 0.782899
-Seed 47 ==> rf_test_cliff_score rmse = 0.756661
-Seed 48 ==> rf_test_cliff_score rmse = 0.686451
-Seed 49 ==> rf_test_cliff_score rmse = 0.812354
-Seed 50 ==> rf_test_cliff_score rmse = 0.764910
-Seed 51 ==> rf_test_cliff_score rmse = 0.881970
-CHEMBL237_Ki ==> rf_direction_score  = 0.800740 +/- 0.038969
-Seed 42 ==> rf_direction_score  = 0.762987
-Seed 43 ==> rf_direction_score  = 0.722222
-Seed 44 ==> rf_direction_score  = 0.851266
-Seed 45 ==> rf_direction_score  = 0.804054
-Seed 46 ==> rf_direction_score  = 0.818966
-Seed 47 ==> rf_direction_score  = 0.819277
-Seed 48 ==> rf_direction_score  = 0.828070
-Seed 49 ==> rf_direction_score  = 0.796353
-Seed 50 ==> rf_direction_score  = 0.844444
-Seed 51 ==> rf_direction_score  = 0.759760
-args: Namespace(seed=42, gpu=None, save_dir='./Benchmark_Data/CHEMBL237_Ki', save_checkpoints=False, checkpoint_path=None, config_dir='./configs', data_path='Benchmark_Data', dataset='CHEMBL237_Ki', threshold=0.9, mode='cross_validation', num_classes=1, split=[0.8, 0.1, 0.1], metric='rmse', minimize_score=True, max_evals=50, hpt_patience=10, use_gnn_opt_params=False, use_opt_xweight=False, tune_type='grid_search', num_folds=10, save_fold=False, show_individual_scores=True, conv_name='nn', num_layers=3, hidden_dim=64, pool='mean', attribute_to_last_layer=True, dropout_rate=0.0, epochs=300, early_stop_epoch=100, batch_size=2, lr=0.0003, weight_decay=0.0, factor=0.9, patience=10, min_lr=1e-07, opt_goal='MSE', loss='MSE+direction', com_loss_weight=0.02, uncom_loss_weight=0.02, normalize=False)
