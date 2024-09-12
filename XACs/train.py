@@ -47,7 +47,7 @@ def run_training(args: Namespace,
 
     for epoch in range(args.epochs):
         s_time = time.time()
-        train_losses = train(args, model, train_loader, loss_func, optimizer, device)
+        train_losses = train(args, epoch, model, train_loader, loss_func, optimizer, device)
         t_time = time.time() - s_time
         s_time = time.time()
         val_score, val_loss = evaluate(args, model, val_loader, loss_func, metric_func, device)
@@ -68,12 +68,12 @@ def run_training(args: Namespace,
                 't_time: {:.4f}s'.format(t_time),
                 'v_time: {:.4f}s'.format(v_time))
         # Save model checkpoint if improved validation score
-        if args.minimize_score and val_score < best_score or \
-                not args.minimize_score and val_score > best_score:
+        if (args.minimize_score and val_score < best_score) or \
+                (not args.minimize_score and val_score > best_score):
             best_score, best_epoch = val_score, epoch  
             if args.save_checkpoints == True: 
-                if args.checkpoint_path is None:
-                    args.checkpoint_path = os.path.join(args.save_dir, f'{args.dataset}_{args.loss}_model_{args.seed}.pt')
+                os.makedirs(os.path.join(args.model_dir, args.dataset), exist_ok=True)
+                args.checkpoint_path = os.path.join(args.model_dir, args.dataset, f'{args.dataset}_{args.loss}_model_{args.seed}.pt')
                 save_checkpoint(args.checkpoint_path, model, args)              
         if args.early_stop_epoch != None and epoch - best_epoch > args.early_stop_epoch:
             break
@@ -82,7 +82,7 @@ def run_training(args: Namespace,
     return best_score
 
 
-def train(args, model, train_loader, loss_func, optimizer, device):
+def train(args, epoch, model, train_loader, loss_func, optimizer, device):
     """
     Trains a model for an epoch.
     """
@@ -91,18 +91,30 @@ def train(args, model, train_loader, loss_func, optimizer, device):
     total_loss, pred_loss, explanation_loss, weighted_explanation_loss = 0.0, 0.0, 0.0, 0.0 
     graph_count, num_explanation = 0, 0
     com_loss_weight, uncom_loss_weight = float(args.com_loss_weight), float(args.uncom_loss_weight)
-    ## New implementation ##
-    for data in train_loader:
+    len_dataloader = len(train_loader)
+    for i, data in enumerate(train_loader):
         data.to(device)
         target = data.target.reshape(-1, 1).double().to(device)
         if args.loss == 'MSE':
             output = model(data.x, data.edge_attr, data.edge_index.type(torch.LongTensor).to(device), data.batch.to(device))
             common_prior = uncom_prior = 0.
+        elif args.gnes:
+            output, att = model.gnes_forward(data.x, data.edge_attr, data.edge_index.type(torch.LongTensor).to(device), data.batch.to(device))
+            uncom_loss_weight = uncom_prior = 0.0
+            common_prior = torch.abs(att).sum()
+            explanation_loss += common_prior.item()
+            weighted_explanation_loss += com_loss_weight*common_prior.item()
+            num_explanation += data.num_graphs
         else:
+            if args.xscheduler:
+                p = float(i + epoch * len_dataloader) / args.epochs / len_dataloader
+                alpha = 2. / (1. + np.exp(-10 * p)) - 1
+                com_loss_weight = com_loss_weight * alpha
+                uncom_loss_weight = uncom_loss_weight * alpha
             potency_diff = data.potency_diff.to(device)
-            output, sum_uncom_att, sum_common_att = model.explanation_forward(data)
-            uncom_prior = pairwise_ranking_loss(sum_uncom_att, potency_diff)
-            common_prior = torch.square(sum_common_att).sum()
+            output, pooled_uncom_att, common_att = model.explanation_forward(data)
+            uncom_prior = pairwise_ranking_loss(pooled_uncom_att, potency_diff)
+            common_prior = torch.square(common_att).sum()
             explanation_loss += uncom_prior.item() + common_prior.item()
             weighted_explanation_loss += com_loss_weight*common_prior.item() + uncom_loss_weight*uncom_prior.item()
             num_explanation += torch.count_nonzero(potency_diff).item()
@@ -152,9 +164,9 @@ def predict(args, model, test_loader, loss_func, metric_func, device):
         target = data.target.reshape(-1, 1).double().to(device)
         cliffs = torch.cat((cliffs, data.cliff.cpu().reshape(-1, 1)))
         potency_diff = data.potency_diff.to(device)
-        output, sum_uncom_att, common_att = model.explanation_forward(data)
-        uncom_prior = pairwise_ranking_loss(sum_uncom_att, potency_diff)
-        num_true_explanation += ((sum_uncom_att * potency_diff) > 0).sum().item()
+        output, pooled_uncom_att_diff, common_att = model.explanation_forward(data)
+        uncom_prior = pairwise_ranking_loss(pooled_uncom_att_diff, potency_diff)
+        num_true_explanation += ((pooled_uncom_att_diff * potency_diff) > 0).sum().item()
         common_prior = torch.square(common_att).sum()
         loss = loss_func(output, target)
 
@@ -167,22 +179,27 @@ def predict(args, model, test_loader, loss_func, metric_func, device):
         y_true = torch.cat((y_true, target.cpu().detach()))
 
     test_score = metric_func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
-    y_pred_cliff = y_pred[cliffs==1]
-    y_true_cliff = y_true[cliffs==1]
-
-    test_cliff_score = metric_func(y_true_cliff, y_pred_cliff)
-    print('test {:.4s}: {:.4f}'.format(args.metric, test_score))
-    print('test cliff {:.4s}: {:.4f}'.format(args.metric, test_cliff_score))
-    if args.task == 'regression':
-        # get r2
-        r2_metric = get_metric_func(metric='r2')
-        r2_test = r2_metric(y_true, y_pred)
-        r2_cliff_test = r2_metric(y_true_cliff, y_pred_cliff)
-        print('test r2: {:.4f}'.format(r2_test))
-        print('test cliff r2: {:.4f}'.format(r2_cliff_test))
-    # explanation accuracy
-    explan_acc = num_true_explanation/num_explanation
-    print('explanation accuracy: {:.4f}'.format(explan_acc))
-    print('explanation loss: {:.4f}'.format(explanation_loss))
-    print('weighted explanation loss: {:.4f}'.format(weighted_explanation_loss))
+    print('test {:.4s}: {:.3f}'.format(args.metric, test_score))
+    test_cliff_score, explan_acc = 0, 0
+    if num_explanation > 0:
+        y_pred_cliff = y_pred[cliffs==1]
+        y_true_cliff = y_true[cliffs==1]
+        if sum(y_true_cliff) == 0 or sum(y_true_cliff) == len(y_true_cliff):
+            test_cliff_score = 0
+        else:
+            test_cliff_score = metric_func(y_true_cliff, y_pred_cliff)
+            print('test cliff {:.4s}: {:.3f}'.format(args.metric, test_cliff_score))
+        # explanation accuracy
+        explan_acc = num_true_explanation/num_explanation
+        print('Total number of explanations: {}'.format(num_explanation))
+        print('explanation accuracy: {:.3f}'.format(explan_acc))
+        if args.task == 'regression':
+            # get r2
+            r2_metric = get_metric_func(metric='r2')
+            r2_test = r2_metric(y_true, y_pred)
+            print('test r2: {:.3f}'.format(r2_test))
+            r2_cliff_test = r2_metric(y_true_cliff, y_pred_cliff)
+            print('test cliff r2: {:.3f}'.format(r2_cliff_test))            
+    print('explanation loss: {:.3f}'.format(explanation_loss))
+    print('weighted explanation loss: {:.3f}'.format(weighted_explanation_loss))
     return test_score, test_cliff_score, explan_acc

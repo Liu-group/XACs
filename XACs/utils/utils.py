@@ -71,7 +71,7 @@ def load_checkpoint(current_args: Namespace):
     """
     Loads a model checkpoint.
     """
-    checkpoint_path = os.path.join(current_args.save_dir, f'{current_args.dataset}_{current_args.loss}_model.pt') if current_args.checkpoint_path is None else current_args.checkpoint_path 
+    checkpoint_path = os.path.join(current_args.model_dir, current_args.dataset, f'{current_args.dataset}_{current_args.loss}_model_{current_args.seed}.pt') if current_args.checkpoint_path is None else current_args.checkpoint_path 
     assert os.path.exists(checkpoint_path), f"Checkpoint {checkpoint_path} not found"
     print(f"Loading model from {checkpoint_path}")
     if current_args.gpu is not None:
@@ -86,16 +86,31 @@ def load_checkpoint(current_args: Namespace):
                 setattr(current_args, key, value)
     else:
         current_args = args
+    # see if args.node_hidden_dim exists, if not, set it to args.hidden_dim
+    if not hasattr(args, 'node_hidden_dim'):
+        current_args.node_hidden_dim = args.hidden_dim
+    if not hasattr(args, 'edge_hidden_dim'):
+        current_args.edge_hidden_dim = args.hidden_dim
+    if not hasattr(args, 'heads'):
+        current_args.heads = 1
+    if not hasattr(args, 'ifp'):
+        current_args.ifp = False
+    
     # Build model
     model = GNN(num_node_features=current_args.num_node_features, 
-                    num_edge_features=current_args.num_edge_features,
-                    num_classes=current_args.num_classes,
-                    conv_name=current_args.conv_name,
-                    num_layers=current_args.num_layers,
-                    hidden_dim=current_args.hidden_dim,
-                    dropout_rate=current_args.dropout_rate,)
+                num_edge_features=current_args.num_edge_features,
+                node_hidden_dim=current_args.node_hidden_dim,
+                edge_hidden_dim=current_args.edge_hidden_dim,
+                num_classes=current_args.num_classes,
+                conv_name=current_args.conv_name,
+                num_layers=current_args.num_layers,
+                hidden_dim=current_args.hidden_dim,
+                dropout_rate=current_args.dropout_rate,
+                pool='mean',
+                heads=current_args.heads,
+                ifp=current_args.ifp,
+                )
     model.load_state_dict(model_state_dict)
-
     return model
 
 def save_checkpoint(path: str,

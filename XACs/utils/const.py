@@ -28,13 +28,35 @@ DATASETS = ['CHEMBL4616_EC50',  'CHEMBL4792_Ki', 'CHEMBL1871_Ki', 'CHEMBL2971_Ki
  'CHEMBL4005_Ki','CHEMBL237_EC50','CHEMBL264_Ki','CHEMBL214_Ki']
 
 MOLDATASETS = ['BACE', 'BBBP', 'Clintox', 'Esol', 'Freesolv', 'Lipo', 'SIDER',]
-
-SEARCH_SPACE = {
-        #"dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
+#ATTRIBUTION_METHODS = ['GradCAM', 'IG', 'InputXGrad', 'Mask', 'SmoothGrad', 'Attention']
+SEARCH_SPACE = { 
+    'nn': {
+        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
         "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
-        #"weight_decay": hp.choice("weight_decay", [0., 1e-3, 1e-4]),
-        "num_layers": hp.choice("num_layers", [2, 4, 8]),# [2, 4, 8]
+        "weight_decay": hp.choice("weight_decay", [0., 1e-3, 1e-4]),
+        "num_layers": hp.choice("num_layers", [2, 3, 5]),
+        "batch_size": hp.choice("batch_size", [32, 64, 128]), 
+        "hidden_dim": hp.choice("hidden_dim", [64, 128]), 
+        "pool": hp.choice("pool", ["mean", "add"])}, 
+    'gine': {
+        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
+        "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
+        "weight_decay": hp.choice("weight_decay", [0., 1e-4, 1e-6]),
+        "num_layers": hp.choice("num_layers", [2, 4, 6,  8]),
         #"batch_size": hp.choice("batch_size", [32, 64, 128]), max
-        "hidden_dim": hp.choice("hidden_dim", [64, 128, 256]), # [64, 128, 256]
-        #"pool": hp.choice("pool", ["mean", "add"]), 
-    }
+        "node_hidden_dim": hp.choice("node_hidden_dim", [64, 32, 16]),
+        "edge_hidden_dim": hp.choice("edge_hidden_dim", [64, 32, 16]),
+        "hidden_dim": hp.choice("hidden_dim", [32, 64, 128]), # [64, 128, 256]
+        "pool": hp.choice("pool", ["mean", "add"]), },
+    'gat': {
+        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
+        "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
+        "weight_decay": hp.choice("weight_decay", [0., 1e-4, 1e-6]),
+        "num_layers": hp.choice("num_layers", [2, 4, 6, 8]),
+        #"batch_size": hp.choice("batch_size", [32, 64, 128]),
+        "node_hidden_dim": hp.choice("node_hidden_dim", [64, 32, 16]),
+        "edge_hidden_dim": hp.choice("edge_hidden_dim", [64, 32, 16]),
+        "hidden_dim": hp.choice("hidden_dim", [32, 64, 128]),
+        "heads": hp.choice("heads", [1, 4, 8]),
+        "pool": hp.choice("pool", ["mean", "add"]), },
+    } 

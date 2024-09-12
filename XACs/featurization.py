@@ -146,6 +146,7 @@ class MolTensorizer(object):
     def tensorize(self, smile: Union[str, Mol]) -> Data:
         if isinstance(smile, str):
             mol = Chem.MolFromSmiles(smile)
+            assert mol is not None, f"Could not parse SMILES: {smile}"
         else:
             mol = smile
         # Get atom features
