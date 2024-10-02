@@ -1,0 +1,12 @@
+numpy
+scikit-learn
+pandas
+tqdm
+torch
+torch_geometric
+torch-scatter
+rdkit
+hyperopt
+Levenshtein
+deepchem
+captum
