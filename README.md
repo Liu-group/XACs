@@ -1,4 +1,4 @@
-# ARPESNet
+# ACES-GNN
 This repository contains the code for the paper "ACES-GNN: Can Graph Neural Network Learn to Explain Activity Cliffs".
 
 ## Dependencies
@@ -29,7 +29,7 @@ python main.py --dataset [dataset_name] \
 ```
 ### Example Commands
 
-1. For CHEMBL214_Ki dataset:
+To train and test MPNN with supervision loss for CHEMBL214_Ki dataset:
 ```bash
 python main.py --dataset 'CHEMBL214_Ki' \
                --config_dir './configs/nn_configs' \
