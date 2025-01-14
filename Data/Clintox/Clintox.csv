@@ -6,7 +6,7 @@ smiles,FDA_APPROVED,y
 [H]/[NH+]=C(\N)/c1ccc(cc1)OCCCCCOc2ccc(cc2)/C(=[NH+]/[H])/N,1,0
 [N+](=O)([O-])[O-],1,0
 [N]=O,1,0
-[NH4][Pt]([NH4])(Cl)Cl,1,0
+N[Pt](N)(Cl)Cl,1,0
 [O-][99Tc](=O)(=O)=O,1,0
 [O-]P(=O)([O-])F,1,0
 [O-]S(=O)(=O)[O-],1,0
@@ -301,7 +301,6 @@ c1ccc(cc1)COc2ccc(cc2)O,1,0
 c1ccc(cc1)COCC(C(=O)[O-])N(CCN(CC[NH+](CC(=O)[O-])CC(=O)[O-])CC(=O)[O-])CC(=O)[O-],1,0
 c1ccc(cc1)CSCC2=NS(=O)(=O)c3cc(c(cc3N2)Cl)S(=O)(=O)N,1,0
 c1ccc(cc1)n2c(ccn2)[N-]S(=O)(=O)c3ccc(cc3)N,1,0
-c1ccc(cc1)n2c(=O)c(c(=O)n2c3ccccc3)CCS(=O)c4ccccc4,1,0
 C1=CC=C(C=C1)NC(=O)CCCCCCC(=O)NO,1,1
 C1CCC(CC1)NC(=O)N(CCCl)N=O,1,0
 C1=CC=C(C=C1)NS(=O)(=O)C2=CC=CC(=C2)/C=C/C(=O)NO,0,1
@@ -1218,8 +1217,6 @@ CCCCC(=O)OCC(=O)[C@@]1(Cc2c(c(c3c(c2[O-])C(=O)c4cccc(c4C3=O)OC)[O-])[C@H](C1)OC5
 CCCCc1[nH+]cc(n1Cc2ccc(cc2)C(=O)[O-])/C=C(\Cc3cccs3)/C(=O)[O-],1,0
 CCCCc1c(c2cc(ccc2o1)NS(=O)(=O)C)C(=O)c3ccc(cc3)OCCC[NH+](CCCC)CCCC,1,0
 CCCCc1c(c2ccccc2o1)C(=O)c3cc(c(c(c3)I)OCC[NH+](CC)CC)I,1,0
-CCCCc1c(=O)n(n(c1=O)c2ccc(cc2)O)c3ccccc3,1,0
-CCCCc1c(=O)n(n(c1=O)c2ccccc2)c3ccccc3,1,0
 CCCCC[C@@H](/C=C/[C@H]1[C@@H](C[C@@H]([C@@H]1C/C=C\CCCC(=O)[O-])O)O)O,1,0
 CCCCC[C@@H](/C=C/[C@H]1[C@@H](CC(=O)[C@@H]1C/C=C\CCCC(=O)[O-])O)O,1,0
 CCCCC[C@@H](/C=C/[C@H]1[C@@H](CC(=O)[C@@H]1CCCCCCC(=O)[O-])O)O,1,0

@@ -58,9 +58,9 @@ num,name,y,smiles
 57,compound 36,1,CN(C)Cc1ccc(CSCCNC2=C([N+]([O-])=O)C(Cc3ccccc3)=CN2)o1
 58,19,0,CNC(=NC#N)Nc1cccc(c1)c1csc(n1)N=C(N)N
 59,Y-G 14,1,n(ccc1)c(c1)CCNC
-60,15,1,O=N([O-])C1=C(CN=C1NCCSCc2ncccc2)Cc3ccccc3
+60,15,1,O=[N+]([O-])C1=C(CN=C1NCCSCc2ncccc2)Cc3ccccc3
 61,sertraline,1,[Cl-].CN[C@H]1CC[C@@H](c2ccc(Cl)c(Cl)c2)c3ccccc13.[H+]
-62,22767,1,c1(nc(NC(N)=[NH2])sc1)CSCCNC(=[NH]C#N)NC
+62,22767,1,C/N=C(/NCCSCc1csc(n1)N=C(N)N)\NC#N
 64,vincristine,1,CC[C@]1(O)C[C@H]2CN(CCc3c([nH]c4ccccc34)[C@@](C2)(C(=O)OC)c5cc6c(cc5OC)N(C=O)[C@H]7[C@](O)([C@H](OC(C)=O)[C@]8(CC)C=CCN9CC[C@]67[C@H]89)C(=O)OC)C1
 65,SB-222200,1,CCC(NC(=O)c1c(c(nc2c1cccc2)c1ccccc1)C)c1ccccc1
 66,SB-656104-A,1,ClC1=CC=CC(OC2CCN(CCC3CCCN3S(C4=CC(N([H])C=C5)=C5C=C4)(=O)=O)CC2)=C1
@@ -390,7 +390,7 @@ num,name,y,smiles
 390,"""2,2-dimethylbutane""",1,CCC(C)(C)C
 391,Vidarabine,1,Nc1ncnc2n(cnc12)C3OC(CO)C(O)C3O
 392,Bis-hydroxylated-L-663581,0,c12c(C(N(Cc3n1cnc3c1noc(n1)C(CO)(CO)C)C)=O)c(ccc2)Cl
-393,ICI17148,1,Cc1nc(sc1)\[NH]=C(\N)N
+393,ICI17148,1,C1(C)=CN=C(N=C(N)N)S1
 394,Mono-hydroxylated-L-663581,0,c12c(C(N(Cc3n1cnc3c1noc(n1)C(O)(C)C)C)=O)c(ccc2)Cl
 395,Thioperamide,1,S=C(NC1CCCCC1)N2CCC(CC2)c3[nH]cnc3
 396,rifampin,0,CC1C=CC=C(C(=O)NC2=C(C3=C(C(=C4C(=C3C(=O)C2=CNN5CCN(CC5)C)C(=O)C(O4)(OC=CC(C(C(C(C(C(C1O)C)O)C)OC(=O)C)C)OC)C)C)O)O)C
@@ -613,7 +613,7 @@ num,name,y,smiles
 613,etazolate,1,CCOC(=O)c1cnc2n(CC)ncc2c1NN=C(C)C
 614,ethchlorvynol,1,CCC(O)(\C=C\Cl)C#C
 615,ethinamate,1,NC(=O)OC1(CCCCC1)C#C
-616,5-6,1,s1cc(CSCCN\C(NC)=[NH]\C#N)nc1\[NH]=C(\N)N
+616,5-6,1,C/N=C(/NCCSCc1csc(n1)N=C(N)N)\NC#N
 617,5-66,1,c1cc(CCNC)ncc1
 618,5-67,1,c1cc(CCN(C)C)ncc1
 619,5-68,1,s1c(ncc1)CCN
@@ -641,14 +641,14 @@ num,name,y,smiles
 641,haloperidol,1,OC1(CCN(CCCC(=O)c2ccc(F)cc2)CC1)c3ccc(Cl)cc3
 642,harmalol,1,CC1=C2NC3=CC(=O)C=CC3=C2C=CN1
 643,harman,1,Cc1nccc2c1[nH]c3ccccc23
-644,12,0,c1c(c(ncc1)CSCCN\C(=[NH]\C#N)NCC)Br
+644,12,0,CC/N=C(/NCCSCc1c(cccn1)Br)\NC#N
 645,14,1,c1cc(ncc1)CSCCNc1c(cc[nH]1)[N+](=O)[O-]
 646,15,1,c1(cc(nc(c1C)C)C(SC(CNc1c(cc[nH]1)[N+](=O)[O-])(C)C)(C)C)C
-647,16,1,n1c(csc1\[NH]=C(\N)N)c1ccccc1
-648,17,0,n1c(csc1\[NH]=C(\N)N)c1cccc(c1)N
-649,18,0,n1c(csc1\[NH]=C(\N)N)c1cccc(c1)NC(C)=O
-650,19,0,n1c(csc1\[NH]=C(\N)N)c1cccc(c1)N\C(NC)=[NH]\C#N
-651,2,1,s1cc(nc1\[NH]=C(\N)N)C
+647,16,1,c1ccc(cc1)c2csc(n2)N=C(N)N
+648,17,0,c1cc(cc(c1)N)c2csc(n2)N=C(N)N
+649,18,0,CC(=O)Nc1cccc(c1)c2csc(n2)NC(=N)N
+650,19,0,C/N=C(\NC#N)/NC1=CC=CC(=C1)C2=CSC(=N2)N=C(N)N
+651,2,1,Cc1csc(n1)N=C(N)N
 652,22,1,c1(c(oc(c1C)C(N(C(C)(N)C)C(N)(C)C)(C)C)C)C.C[NH+]O.[OH-]
 653,23,1,[NH]C(CC(C)C([N@@](C(C)(C)C)C(N)(C)N)(C)C)c1c(c(c[nH+][o+]1)C)[O-]
 654,tamitinol,1,CCNCc1c(O)c(C)ncc1CSC
@@ -684,7 +684,6 @@ num,name,y,smiles
 684,medazepam,1,CN1CCN=C(c2ccccc2)c3cc(Cl)ccc13
 685,meprobamate,1,CCCC(C)(COC(N)=O)COC(N)=O
 686,9-C15,1,c1c2CCOc2c(cc1OC)CN[C@@H]1CCCN[C@H]1c1ccccc1
-687,9-C17,1,c1(cc(N\C(=[NH]\c2cccc(c2)CC)C)ccc1)CC
 688,9-C7,1,c1(c(cc2n(ncc2c1)CCN)Cl)Cl
 689,Abacavir,1,Nc1nc(NC2CC2)c3ncn([C@@H]4C[C@H](CO)C=C4)c3n1
 690,Acebutolol,1,CCCC(=O)Nc1ccc(OCC(O)CNC(C)C)c(c1)C(C)=O
@@ -1997,7 +1996,7 @@ num,name,y,smiles
 1999,seproxetine,1,NCCC(Oc1ccc(cc1)C(F)(F)F)c2ccccc2
 2000,setoperone,1,C4=C(C(C3CCN(CCC1=C(N=C2N(C1=O)CCS2)C)CC3)=O)C=CC(=C4)F
 2001,sipatrigine,1,C3=C(C2=C(N=C(N1CCN(C)CC1)N=C2)N)C(=C(C=C3Cl)Cl)Cl
-2002,spiclamine,1,[C@@H]3(C1=CC=C(Cl)C=C1)[C@H]2CC[C@@H](C2)C34CCC(=N4)N5CCOCC5
+2002,spiclamine,1,C1CC2CC1C(C23CCC(=N3)N4CCOCC4)C5=CC=C(C=C5)Cl
 2003,spiroxatrine,1,C1=CC=CC=C1N2C5(C(NC2)=O)CCN(CC4OC3=C(C=CC=C3)OC4)CC5
 2004,sulazepam,1,C1=C(Cl)C=CC2=C1C(=NCC(=S)N2C)C3=CC=CC=C3
 2005,sulfonethylmethane,1,C(C([S](CC)(=O)=O)([S](CC)(=O)=O)C)C
