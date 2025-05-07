@@ -7,7 +7,7 @@ from XACs.utils.utils import pairwise_ranking_loss
 from XACs.attribution import GradCAM, InputXGrad, IG, SmoothGrad
 from XACs.dataset import MoleculeDataset
 from XACs.featurization import MolTensorizer
-from XACs.GNN import GNN
+from XACs.models.GNN import GNN
 from XACs.train import predict
 import torch
 from torch_geometric.data import Data
@@ -96,7 +96,7 @@ def evaluate_gnn_explain_direction(dataset: MoleculeDataset, data_test: Data, mo
         mmp_dicts = cliff_dict[smi]
         if mmp_dicts[0]['is_cliff_mol']==False:
             continue
-        graph_i = featurizer.tensorize(smi)
+        graph_i = featurizer.tensorize(smi).to('cpu')
         #masked_graphs_i = featurizer.gen_masked_atom_feats(smi)
 
         if model.conv_name == 'gat':
@@ -113,7 +113,7 @@ def evaluate_gnn_explain_direction(dataset: MoleculeDataset, data_test: Data, mo
             uncommon_atom_idx_i = mmp_dict['uncommon_atom_idx_i']
             uncommon_atom_idx_j = mmp_dict['uncommon_atom_idx_j']
             
-            graph_j = featurizer.tensorize(mmp_smi)
+            graph_j = featurizer.tensorize(mmp_smi).to('cpu')
             #masked_graphs_j = featurizer.gen_masked_atom_feats(mmp_smi)
             if model.conv_name == 'gat':
                 attention_j = get_attention_score(model, graph_j)            
@@ -239,8 +239,11 @@ def evaluate_rf_explain_direction(cliff_dict, data_test, model_rf):
 def run_evaluation(args, model, data_test):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    test_loader = DataLoader(data_test, batch_size = args.batch_size, shuffle=False)
-    loss_func = torch.nn.MSELoss()
-    metric_func = get_metric_func(metric=args.metric)
-    test_score, test_cliff_score, explan_acc = predict(args, model, test_loader, loss_func, metric_func, device)
-    return test_score, test_cliff_score, explan_acc
+    test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
+    loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
+    
+    # Create dictionary of metric functions
+    metric_funcs = {metric: get_metric_func(metric=metric) for metric in args.metric}
+    
+    test_scores, test_cliff_scores, explan_acc = predict(args, model, test_loader, loss_func, metric_funcs, device)
+    return test_scores, test_cliff_scores, explan_acc

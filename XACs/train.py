@@ -4,7 +4,7 @@ import time
 import multiprocessing
 from copy import deepcopy
 from argparse import Namespace
-from typing import List, Optional
+from typing import List, Optional, Dict
 import numpy as np
 import gc
 import torch
@@ -15,31 +15,45 @@ from XACs.utils.explain_utils import process_layer_gradients_and_eval
 from XACs.utils.utils import save_checkpoint, load_checkpoint, pairwise_ranking_loss
 from XACs.utils.metrics import get_metric_func
 from XACs.dataset import MoleculeDataset
-from XACs.GNN import GNN
+from XACs.models.GNN import GNN
 from sklearn.model_selection import train_test_split
 
 def run_training(args: Namespace,
                  model: GNN, 
                  data_train: List[Data], 
                  data_val: List[Data],
-                 ) -> List[float]:
+                 ) -> Dict[str, float]:
     """
-    Trains a model and returns the model with the highest validation score.
+    Trains a model and returns the models with the highest validation score for each metric.
     :param model: Model to train.
     :param data_train: Training data.
     :param data_val: Validation data.
-    :return: Model with the highest validation score.
+    :return: Dictionary of best validation scores for each metric.
     """
     train_loader = DataLoader(data_train, batch_size = args.batch_size, shuffle=False)
     val_loader = DataLoader(data_val, batch_size = args.batch_size, shuffle=False)
 
     loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
-    metric = args.metric
-    metric_func = get_metric_func(metric=metric)
+    
+    # Create dictionary of metric functions
+    metric_funcs = {metric: get_metric_func(metric=metric) for metric in args.metric}
+    
+    # Track best scores for each metric
+    best_scores = {}
+    best_epochs = {}
+    for metric in args.metric:
+        best_scores[metric] = float('inf') if metric in ['rmse', 'mse', 'mae'] else -float('inf')
+        best_epochs[metric] = 0
+    
+    # Also track best validation loss for early stopping
+    best_val_loss = float('inf')
+    best_val_loss_epoch = 0
+    
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=args.factor, patience=args.patience, min_lr=args.min_lr)
+    # Use validation loss for LR scheduling
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                                          factor=args.factor, patience=args.patience, min_lr=args.min_lr)
 
-    best_score = float('inf') if args.minimize_score else -float('inf')
     losses = collections.defaultdict(list)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,11 +64,14 @@ def run_training(args: Namespace,
         train_losses = train(args, epoch, model, train_loader, loss_func, optimizer, device)
         t_time = time.time() - s_time
         s_time = time.time()
-        val_score, val_loss = evaluate(args, model, val_loader, loss_func, metric_func, device)
+        
+        # Get all metrics
+        val_scores, val_loss = evaluate(args, model, val_loader, loss_func, metric_funcs, device)
+        
         v_time = time.time() - s_time
-        scheduler.step(val_score)
+        # Use validation loss for scheduler
+        scheduler.step(val_loss)
 
-        #losses['train'].append(train_losses['train'][0])
         losses['train_pred'].append(train_losses['pred'][0])
         losses['train_explanation'].append(train_losses['explanation'][0])
         losses['val'].append(val_loss)
@@ -63,23 +80,50 @@ def run_training(args: Namespace,
                 'train_pred_loss: {:.6f}'.format(train_losses['pred'][0]),
                 'train_xloss: {:.6f}'.format(train_losses['explanation'][0]),
                 'val_pred_loss: {:.6f}'.format(val_loss),
-                '{:.4s}_val: {:.4f}'.format(args.metric, val_score),
                 'cur_lr: {:.5f}'.format(optimizer.param_groups[0]['lr']),
                 't_time: {:.4f}s'.format(t_time),
                 'v_time: {:.4f}s'.format(v_time))
-        # Save model checkpoint if improved validation score
-        if (args.minimize_score and val_score < best_score) or \
-                (not args.minimize_score and val_score > best_score):
-            best_score, best_epoch = val_score, epoch  
-            if args.save_checkpoints == True: 
+                
+        # Print all metrics
+        for metric, score in val_scores.items():
+            print('{:.4s}_val: {:.4f}'.format(metric, score))
+        
+        # Track best validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_val_loss_epoch = epoch
+            # Save a model based on validation loss
+            if args.save_checkpoints:
                 os.makedirs(os.path.join(args.model_dir, args.dataset), exist_ok=True)
-                args.checkpoint_path = os.path.join(args.model_dir, args.dataset, f'{args.dataset}_{args.loss}_model_{args.seed}.pt')
-                save_checkpoint(args.checkpoint_path, model, args)              
-        if args.early_stop_epoch != None and epoch - best_epoch > args.early_stop_epoch:
+                checkpoint_path = os.path.join(args.model_dir, args.dataset, 
+                                             f'{args.dataset}_{args.loss}_model_{args.seed}_val_loss.pt')
+                save_checkpoint(checkpoint_path, model, args)
+                print(f'Saved best validation loss model at epoch {epoch}')
+                
+        # Check for improvement in each metric and save corresponding model
+        for metric, score in val_scores.items():
+            minimize = metric in ['rmse', 'mse', 'mae']
+            if (minimize and score < best_scores[metric]) or (not minimize and score > best_scores[metric]):
+                best_scores[metric], best_epochs[metric] = score, epoch
+                if args.save_checkpoints:
+                    os.makedirs(os.path.join(args.model_dir, args.dataset), exist_ok=True)
+                    checkpoint_path = os.path.join(args.model_dir, args.dataset, 
+                                                 f'{args.dataset}_{args.loss}_model_{args.seed}_{metric}.pt')
+                    save_checkpoint(checkpoint_path, model, args)
+                    print(f'Saved best {metric} model at epoch {epoch}')
+                    
+        # Early stopping based on validation loss
+        if args.early_stop_epoch is not None and epoch - best_val_loss_epoch > args.early_stop_epoch:
+            print(f'Early stopping triggered after {args.early_stop_epoch} epochs without improvement in validation loss')
             break
-    print('best epoch: {:04d}'.format(best_epoch))
-    print('best val {:.4s}: {:.4f}'.format(metric, best_score))
-    return best_score
+            
+    # Print best results for each metric
+    print('Best validation scores:')
+    print('val_loss: {:.4f} at epoch {:04d}'.format(best_val_loss, best_val_loss_epoch))
+    for metric, score in best_scores.items():
+        print('{:.4s}_val: {:.4f} at epoch {:04d}'.format(metric, score, best_epochs[metric]))
+        
+    return best_scores
 
 
 def train(args, epoch, model, train_loader, loss_func, optimizer, device):
@@ -131,7 +175,10 @@ def train(args, epoch, model, train_loader, loss_func, optimizer, device):
 
     return losses
 
-def evaluate(args, model, val_loader, loss_func, metric_func, device):
+def evaluate(args, model, val_loader, loss_func, metric_funcs, device):
+    """
+    Evaluates a model on a validation set without performing backpropagation.
+    """
     model.eval()
     losses = collections.defaultdict(list)
     total_loss, pred_loss = 0.0, 0.0
@@ -149,11 +196,18 @@ def evaluate(args, model, val_loader, loss_func, metric_func, device):
             graph_count += data.num_graphs
             y_pred = torch.cat((y_pred, out.cpu().detach().reshape(-1, args.num_classes)))
             y_true = torch.cat((y_true, target.cpu().detach()))
-    val_score = metric_func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
+    
+    # Calculate all metrics
+    val_scores = {}
+    for metric, func in metric_funcs.items():
+        val_scores[metric] = func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
 
-    return val_score, total_loss/graph_count
+    return val_scores, total_loss/graph_count
 
-def predict(args, model, test_loader, loss_func, metric_func, device):
+def predict(args, model, test_loader, loss_func, metric_funcs, device):
+    """
+    Evaluates a model on a test set using explanation_forward (performing backpropagation).
+    """
     model.eval()
     y_pred, y_true, cliffs = torch.zeros(0, args.num_classes), torch.zeros(0, 1), torch.zeros(0, 1)
     total_loss, explanation_loss, weighted_explanation_loss =  0.0, 0.0, 0.0
@@ -178,28 +232,34 @@ def predict(args, model, test_loader, loss_func, metric_func, device):
         y_pred = torch.cat((y_pred, output.cpu().detach().reshape(-1, args.num_classes)))
         y_true = torch.cat((y_true, target.cpu().detach()))
 
-    test_score = metric_func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
-    print('test {:.4s}: {:.3f}'.format(args.metric, test_score))
-    test_cliff_score, explan_acc = 0, 0
+    # Calculate all metrics
+    test_scores = {}
+    for metric, func in metric_funcs.items():
+        test_scores[metric] = func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
+        print('test {:.4s}: {:.3f}'.format(metric, test_scores[metric]))
+    
+    # Primary metric for cliff score
+    primary_metric = args.metric[0]
+    test_cliff_scores = {}
+    explan_acc = 0
+    
     if num_explanation > 0:
         y_pred_cliff = y_pred[cliffs==1]
         y_true_cliff = y_true[cliffs==1]
         if sum(y_true_cliff) == 0 or sum(y_true_cliff) == len(y_true_cliff):
-            test_cliff_score = 0
+            for metric in args.metric:
+                test_cliff_scores[metric] = 0
         else:
-            test_cliff_score = metric_func(y_true_cliff, y_pred_cliff)
-            print('test cliff {:.4s}: {:.3f}'.format(args.metric, test_cliff_score))
+            for metric, func in metric_funcs.items():
+                test_cliff_scores[metric] = func(y_true_cliff, y_pred_cliff)
+                print('test cliff {:.4s}: {:.3f}'.format(metric, test_cliff_scores[metric]))
+        
         # explanation accuracy
         explan_acc = num_true_explanation/num_explanation
         print('Total number of explanations: {}'.format(num_explanation))
         print('explanation accuracy: {:.3f}'.format(explan_acc))
-        if args.task == 'regression':
-            # get r2
-            r2_metric = get_metric_func(metric='r2')
-            r2_test = r2_metric(y_true, y_pred)
-            print('test r2: {:.3f}'.format(r2_test))
-            r2_cliff_test = r2_metric(y_true_cliff, y_pred_cliff)
-            print('test cliff r2: {:.3f}'.format(r2_cliff_test))            
+        
     print('explanation loss: {:.3f}'.format(explanation_loss))
     print('weighted explanation loss: {:.3f}'.format(weighted_explanation_loss))
-    return test_score, test_cliff_score, explan_acc
+    
+    return test_scores, test_cliff_scores, explan_acc

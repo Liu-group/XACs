@@ -2,7 +2,7 @@ from XACs.utils.utils import set_seed, load_pickle, save_pickle
 from XACs.utils.parsing import get_args
 from XACs.utils.const import SEARCH_SPACE
 from XACs.train import run_training
-from XACs.GNN import GNN
+from XACs.models.GNN import GNN
 from cross_validation import cross_validate
 import torch
 from itertools import product

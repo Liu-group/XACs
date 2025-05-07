@@ -11,7 +11,6 @@ from XACs.featurization import MolTensorizer
 from XACs.cliffs import ActivityCliffs, get_tanimoto_matrix
 from XACs.utils.const import DATASETS, MOLDATASETS
 import torch
-import deepchem as dc
 
 class MoleculeDataset:
     def __init__(
@@ -37,6 +36,7 @@ class MoleculeDataset:
 
         self.smiles_all = df['smiles'].tolist()
         self.y_all = df['y'].tolist()
+        self.task_type = 'regression' if np.unique(self.y_all).shape[0] > 10 else 'classification'
         self.cliff_mols = None
 
         self.featurize_data()
@@ -77,12 +77,13 @@ class MoleculeDataset:
             df = pd.read_csv(split_path)
             train_idx, val_idx, test_idx = df[df['split'] == 'train'].index.tolist(), df[df['split'] == 'val'].index.tolist(), df[df['split'] == 'test'].index.tolist()
         elif split_method == 'random':
-            train_idx, test_idx = train_test_split(range(len(self.smiles_all)), test_size=split_ratio[2], random_state=seed)
-            train_idx, val_idx = train_test_split(train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]), random_state=seed)
+            train_idx, test_idx = train_test_split(range(len(self.smiles_all)), test_size=split_ratio[2], random_state=seed, stratify=self.y_all if self.task_type == 'classification' else None)
+            train_idx, val_idx = train_test_split(train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]), random_state=seed, stratify=[self.y_all[i] for i in train_idx] if self.task_type == 'classification' else None)
         elif split_method == 'cliff':
             assert self.cliff_mols is not None, "No cliff information available"
             train_idx, val_idx, test_idx = cliff_split(self.smiles_all, self.y_all, self.cliff_mols, split_ratio=split_ratio, n_clusters=n_clusters, seed=seed)
         elif split_method == 'scaffold':
+            import deepchem as dc
             pseudo_dataset = dc.data.DiskDataset.from_numpy(X=np.zeros((len(self.smiles_all))), y=np.zeros(len(self.smiles_all)), ids=self.smiles_all)
             scaffoldsplitter = dc.splits.ScaffoldSplitter()
             train_idx, val_idx, test_idx = scaffoldsplitter.split(pseudo_dataset, seed=seed, frac_train=split_ratio[0], frac_valid=split_ratio[1], frac_test=split_ratio[2])
@@ -102,7 +103,7 @@ class MoleculeDataset:
                     raise ValueError(f"Can't find molecule {i} in train, val or test")
             df = pd.DataFrame({'smiles': self.smiles_all,
                             'y': self.y_all,
-                            'cliff_mol': self.cliff_mols,
+                            #'cliff_mol': self.cliff_mols,
                             'split': split})
             df.to_csv(split_path, index=False)
             print(f"Saved split to {split_path}")

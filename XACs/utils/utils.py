@@ -5,7 +5,7 @@ from argparse import Namespace
 import numpy as np
 from typing import List, Dict, Tuple
 import pickle
-from XACs.GNN import GNN
+from XACs.models.GNN import GNN
 import torch
 
 
@@ -93,8 +93,8 @@ def load_checkpoint(current_args: Namespace):
         current_args.edge_hidden_dim = args.hidden_dim
     if not hasattr(args, 'heads'):
         current_args.heads = 1
-    if not hasattr(args, 'ifp'):
-        current_args.ifp = False
+    if not hasattr(args, 'embed_method'):
+        current_args.embed_method = 'linear'
     
     # Build model
     model = GNN(num_node_features=current_args.num_node_features, 
@@ -108,7 +108,8 @@ def load_checkpoint(current_args: Namespace):
                 dropout_rate=current_args.dropout_rate,
                 pool='mean',
                 heads=current_args.heads,
-                ifp=current_args.ifp,
+                embed_method=current_args.embed_method,
+                deg=current_args.deg,
                 )
     model.load_state_dict(model_state_dict)
     return model
@@ -144,3 +145,18 @@ def makedirs(path: str, isfile: bool = False):
         path = os.path.dirname(path)
     if path != '':
         os.makedirs(path, exist_ok=True)
+
+def get_deg(train_dataset):
+    from torch_geometric.utils import degree
+    # Compute the maximum in-degree in the training data.
+    max_degree = -1
+    for data in train_dataset:
+        d = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
+        max_degree = max(max_degree, int(d.max()))
+
+    # Compute the in-degree histogram tensor
+    deg = torch.zeros(max_degree + 1, dtype=torch.long)
+    for data in train_dataset:
+        d = degree(data.edge_index[1], num_nodes=data.num_nodes, dtype=torch.long)
+        deg += torch.bincount(d, minlength=deg.numel())
+    return deg

@@ -141,7 +141,7 @@ archive_files/
 results*/
 TUDataset/
 visualization/
-XACs/GNN.py
+GNN.py
 tools/
 scripts/
 notebooks/

@@ -27,7 +27,7 @@ DATASETS = ['CHEMBL4616_EC50',  'CHEMBL4792_Ki', 'CHEMBL1871_Ki', 'CHEMBL2971_Ki
  'CHEMBL262_Ki','CHEMBL287_Ki','CHEMBL2034_Ki','CHEMBL3979_EC50','CHEMBL238_Ki','CHEMBL2835_Ki',
  'CHEMBL4005_Ki','CHEMBL237_EC50','CHEMBL264_Ki','CHEMBL214_Ki']
 
-MOLDATASETS = ['BACE', 'BBBP', 'Clintox', 'Esol', 'Freesolv', 'Lipo', 'SIDER',]
+MOLDATASETS = ['bodipy','drd2', 'kcnh2', 'kdr', 'BACE', 'BBBP', 'Clintox', 'Esol', 'Freesolv', 'Lipo', 'SIDER',]
 #ATTRIBUTION_METHODS = ['GradCAM', 'IG', 'InputXGrad', 'Mask', 'SmoothGrad', 'Attention']
 SEARCH_SPACE = { 
     'nn': {
@@ -59,4 +59,15 @@ SEARCH_SPACE = {
         "hidden_dim": hp.choice("hidden_dim", [32, 64, 128]),
         "heads": hp.choice("heads", [1, 4, 8]),
         "pool": hp.choice("pool", ["mean", "add"]), },
+    'dmpnn': {
+        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
+        "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
+        "weight_decay": hp.choice("weight_decay", [0., 1e-4, 1e-6]),
+        "node_hidden_dim": hp.choice("node_hidden_dim", [64, 32, 16]),
+        "edge_hidden_dim": hp.choice("edge_hidden_dim", [64, 32, 16]),
+        "num_layers": hp.choice("num_layers", [2, 4, 6, 8]),
+        #"batch_size": hp.choice("batch_size", [32, 64, 128]),
+        "hidden_dim": hp.choice("hidden_dim", [32, 64, 128]),
+        "pool": hp.choice("pool", ["add"]), },
+
     } 
