@@ -12,7 +12,7 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.data import Data
 from torch_scatter import scatter
 from XACs.utils.explain_utils import process_layer_gradients_and_eval
-from XACs.utils.utils import save_checkpoint, load_checkpoint, pairwise_ranking_loss
+from XACs.utils.utils import save_checkpoint, load_checkpoint, pairwise_ranking_loss, get_deg
 from XACs.utils.metrics import get_metric_func
 from XACs.dataset import MoleculeDataset
 from XACs.models.GNN import GNN
@@ -98,7 +98,7 @@ def run_training(args: Namespace,
                 checkpoint_path = os.path.join(args.model_dir, args.dataset, 
                                              f'{args.dataset}_{args.loss}_model_{args.seed}_val_loss.pt')
                 save_checkpoint(checkpoint_path, model, args)
-                print(f'Saved best validation loss model at epoch {epoch}')
+                #print(f'Saved best validation loss model at epoch {epoch}')
                 
         # Check for improvement in each metric and save corresponding model
         for metric, score in val_scores.items():
@@ -110,7 +110,7 @@ def run_training(args: Namespace,
                     checkpoint_path = os.path.join(args.model_dir, args.dataset, 
                                                  f'{args.dataset}_{args.loss}_model_{args.seed}_{metric}.pt')
                     save_checkpoint(checkpoint_path, model, args)
-                    print(f'Saved best {metric} model at epoch {epoch}')
+                    #print(f'Saved best {metric} model at epoch {epoch}')
                     
         # Early stopping based on validation loss
         if args.early_stop_epoch is not None and epoch - best_val_loss_epoch > args.early_stop_epoch:
@@ -123,8 +123,6 @@ def run_training(args: Namespace,
     for metric, score in best_scores.items():
         print('{:.4s}_val: {:.4f} at epoch {:04d}'.format(metric, score, best_epochs[metric]))
         
-    return best_scores
-
 
 def train(args, epoch, model, train_loader, loss_func, optimizer, device):
     """
@@ -204,7 +202,7 @@ def evaluate(args, model, val_loader, loss_func, metric_funcs, device):
 
     return val_scores, total_loss/graph_count
 
-def predict(args, model, test_loader, loss_func, metric_funcs, device):
+def predict(args, model, test_loader, loss_func, device):
     """
     Evaluates a model on a test set using explanation_forward (performing backpropagation).
     """
@@ -232,34 +230,36 @@ def predict(args, model, test_loader, loss_func, metric_funcs, device):
         y_pred = torch.cat((y_pred, output.cpu().detach().reshape(-1, args.num_classes)))
         y_true = torch.cat((y_true, target.cpu().detach()))
 
-    # Calculate all metrics
-    test_scores = {}
-    for metric, func in metric_funcs.items():
-        test_scores[metric] = func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
-        print('test {:.4s}: {:.3f}'.format(metric, test_scores[metric]))
-    
-    # Primary metric for cliff score
-    primary_metric = args.metric[0]
-    test_cliff_scores = {}
-    explan_acc = 0
-    
-    if num_explanation > 0:
-        y_pred_cliff = y_pred[cliffs==1]
-        y_true_cliff = y_true[cliffs==1]
-        if sum(y_true_cliff) == 0 or sum(y_true_cliff) == len(y_true_cliff):
-            for metric in args.metric:
-                test_cliff_scores[metric] = 0
-        else:
-            for metric, func in metric_funcs.items():
-                test_cliff_scores[metric] = func(y_true_cliff, y_pred_cliff)
-                print('test cliff {:.4s}: {:.3f}'.format(metric, test_cliff_scores[metric]))
+    explan_acc = num_true_explanation/num_explanation
+    print('Total number of explanations: {}'.format(num_explanation))
+    print('explanation accuracy: {:.3f}'.format(explan_acc))
+    #print('explanation loss: {:.3f}'.format(explanation_loss))
+    #print('weighted explanation loss: {:.3f}'.format(weighted_explanation_loss))
+    return y_pred, y_true, cliffs
+
+
+def run_cv_train(args, data_train, gnn_config):
+    """
+    Trains a model on a K-Fold cross-validation set, returns the best model for each fold.
+    Adopt from https://github.com/shenwanxiang/ACANet/blob/main/clsar/main.py#L185 _cv_split(
+    """
+    from sklearn.model_selection import StratifiedKFold
+
+    KFold = StratifiedKFold(n_splits=5, shuffle=True, random_state=args.seed)
+    y_all = [data.target for data in data_train]
+    cutoff = np.median(y_all)
+    labels = [0 if i < cutoff else 1 for i in y_all]
+    splits = [{'inner_train_idx': i, 'inner_val_idx': j} for i, j in KFold.split(labels, labels)]
+    initial_fold_seed = args.seed
+    for i, split in enumerate(splits):
+        inner_train_data = [data_train[idx] for idx in split['inner_train_idx']]
+        inner_val_data = [data_train[idx] for idx in split['inner_val_idx']]
+        args.seed = initial_fold_seed * 10 + i
+        if args.conv_name == 'pna':
+            args.deg = get_deg(inner_train_data)
+        gnn_config['deg'] = args.deg
+        model = GNN(**gnn_config)    
+        _ = run_training(args, model, inner_train_data, inner_val_data)
+    print("All folds trained")
         
-        # explanation accuracy
-        explan_acc = num_true_explanation/num_explanation
-        print('Total number of explanations: {}'.format(num_explanation))
-        print('explanation accuracy: {:.3f}'.format(explan_acc))
         
-    print('explanation loss: {:.3f}'.format(explanation_loss))
-    print('weighted explanation loss: {:.3f}'.format(weighted_explanation_loss))
-    
-    return test_scores, test_cliff_scores, explan_acc

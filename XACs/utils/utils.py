@@ -109,7 +109,7 @@ def load_checkpoint(current_args: Namespace):
                 pool='mean',
                 heads=current_args.heads,
                 embed_method=current_args.embed_method,
-                deg=current_args.deg,
+                deg=current_args.deg if hasattr(current_args, 'deg') else None
                 )
     model.load_state_dict(model_state_dict)
     return model
@@ -129,7 +129,7 @@ def save_checkpoint(path: str,
         'state_dict': model.state_dict(),
     }
     torch.save(state, path)
-    print(f"Model saved to {path}")
+    #print(f"Model saved to {path}")
 
 def makedirs(path: str, isfile: bool = False):
     """

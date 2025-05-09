@@ -3,38 +3,38 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser()
     # common
-    parser.add_argument("--seed", type=int, default=45, help="seed")
+    parser.add_argument("--seed", type=int, default=42, help="seed")
     parser.add_argument("--gpu", type=int, default=None, help="cuda")
     parser.add_argument('--save_checkpoints', type=bool, default=True)
-    parser.add_argument('--model_dir', type=str, default='Benchmark_Data') #Benchmark_Data
+    parser.add_argument('--model_dir', type=str, default='results_cv') #Benchmark_Data
     parser.add_argument('--config_dir', type=str, default='./configs/nn_configs') # mpnn_configs
     parser.add_argument('--data_dir', type=str, default='Data')#'Benchmark_Data' or 'QSAR_ACs' or 'Data'
     
-    parser.add_argument('--dataset', type=str, default='CHEMBL236_Ki')#CHEMBL233_Ki
+    parser.add_argument('--dataset', type=str, default='CHEMBL2835_Ki')#CHEMBL233_Ki
     parser.add_argument('--task', type=str, default='regression', help='classificfation or regression') 
     parser.add_argument('--num_classes', type=int, default=1) # currently only binary classification or regression
     parser.add_argument('--metric', type=str, nargs='+', default=['rmse', 'mae'], help='metrics to evaluate: auprc, auroc, rmse, mse, mae, r2, accuracy, etc.')
 
     parser.add_argument('--sim_threshold', type=float, default=0.9, help='threshold for similarity')
     parser.add_argument('--dist_threshold', type=float, default=1.0, help='threshold for distance')
-    parser.add_argument('--mode', type=str, default='cross_test', help='cross_validation or train_test or test or hypertune or cross_test')
-    parser.add_argument('--split', type=list, default=[0.6, 0.2, 0.2])
+    parser.add_argument('--mode', type=str, default='cross_validation', help='cross_validation or train_test or test or hypertune or cross_test')
+    parser.add_argument('--split', type=list, default=[0.8, 0.1, 0.1])
     parser.add_argument('--split_method', type=str, default='cliff', help='random or cliff split')
 
     # hypertune
     parser.add_argument('--max_evals', type=int, default=50)
     parser.add_argument('--hpt_patience', type=int, default=10)
-    parser.add_argument('--use_gnn_opt_params', type=bool, default=False) # use optimal parameters
-    parser.add_argument('--use_opt_xweight', type=bool, default=False) # use optimal explanation weight
+    parser.add_argument('--use_gnn_opt_params', type=bool, default=True) # use optimal parameters
+    parser.add_argument('--use_opt_xweight', type=bool, default=True) # use optimal explanation weight
     parser.add_argument('--tune_type', type=str, default='hyperopt_search') # hyperopt_search or grid_search; 
     #if grid_search, use_opt_params should be True
 
    # cross validation
-    parser.add_argument('--num_folds', type=int, default=5)
+    parser.add_argument('--num_folds', type=int, default=9)
     parser.add_argument('--show_individual_scores', type=bool, default=True)
     # GNN
     parser.add_argument('--ensemble', type=bool, default=False)
-    parser.add_argument('--embed_method', type=str, default='original', choices=['linear', 'ifp', 'original'], 
+    parser.add_argument('--embed_method', type=str, default='linear', choices=['linear', 'ifp', 'original'], 
                    help='embedding method: linear, ifp, or original features')
     parser.add_argument('--num_node_features', type=int, default=42)
     parser.add_argument('--num_edge_features', type=int, default=6)
@@ -44,25 +44,25 @@ def get_args():
     parser.add_argument('--num_layers', type=int, default=4)
     parser.add_argument('--hidden_dim', type=int, default=512)
     parser.add_argument('--heads', type=int, default=8)
-    parser.add_argument('--pool', type=str, default='max') 
+    parser.add_argument('--pool', type=str, default='mean') 
     parser.add_argument('--attribute_to_last_layer', type=bool, default=True)   
     # training
     parser.add_argument('--dropout_rate', type=float, default=0.)
-    parser.add_argument('--epochs', type=int, default=800)
-    parser.add_argument('--early_stop_epoch', type=int, default=800)
+    parser.add_argument('--epochs', type=int, default=300)
+    parser.add_argument('--early_stop_epoch', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=0.)
-    parser.add_argument('--factor', type=float, default=1.0)
+    parser.add_argument('--factor', type=float, default=0.90)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--min_lr', type=int, default=1e-7)
 
     # explanation
     parser.add_argument('--sim_struct', type=str, default='combined')# combined or mmp
-    parser.add_argument("--loss", type=str, default="MSE+direction", help="Type of loss for training GNN.") 
+    parser.add_argument("--loss", type=str, default="MSE", help="Type of loss for training GNN.") 
     parser.add_argument('--com_loss_weight', type=float, default=0.02)
     parser.add_argument('--uncom_loss_weight', type=float, default=0.02)
-    parser.add_argument('--uncom_pool', type=str, default='mean') # mean or add
+    parser.add_argument('--uncom_pool', type=str, default='add') # mean or add
     parser.add_argument('--normalize_att', type=bool, default=False)
     parser.add_argument('--gnes', type=bool, default=False)
     parser.add_argument('--xscheduler', type=bool, default=False)

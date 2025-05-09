@@ -86,7 +86,7 @@ if __name__ == '__main__':
         print("Total number of trainable params: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
 
         print(f"Running GNN training... for {args.dataset} using {args.loss}\n")
-        _ = run_training(args, model, data_train, data_val)
+        run_training(args, model, data_train, data_val)
         print("Testing...")
         best_model = load_checkpoint(args)
         test_score, test_cliff_score, _ = run_evaluation(args, best_model, data_test)
@@ -175,3 +175,102 @@ if __name__ == '__main__':
             if args.show_individual_scores:
                 for fold_num, scores in enumerate(fold_scores):
                     print(f'Seed {init_seed + fold_num} ==> {key} = {scores:.3f}')
+    if args.mode == 'ensemble_test':
+        from XACs.evaluate import evaluate_gnn_explain_direction_ensemble
+
+        init_seed = args.seed
+        all_scores = collections.defaultdict(list)
+        model_list = []
+        for fold_num in range(args.num_folds):
+            print(f'Fold {fold_num}')
+            current_args = deepcopy(args)
+            current_args.seed = init_seed + fold_num
+            set_seed(seed=current_args.seed)
+            current_args.checkpoint_path = os.path.join(args.model_dir, args.dataset, f'{args.dataset}_{args.loss}_model_{current_args.seed}.pt')  
+            best_model = load_checkpoint(current_args)
+            model_list.append(best_model)
+        data_train, data_val, data_test = dataset.split_data(split_ratio=current_args.split, 
+                                                            split_method=current_args.split_method,
+                                                            seed=42, 
+                                                            save_split=True)
+        '''
+        gnn_score, _ = evaluate_gnn_explain_direction_ensemble(current_args, dataset, data_test, model_list)
+        # merge gnn_score with all_scores
+        for key, value in gnn_score.items():
+            all_scores[key].append(value)
+        '''                    
+        data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)     
+        def predict_single_model(single_model):
+            from torch_geometric.loader import DataLoader
+            from XACs.utils.utils import pairwise_ranking_loss
+
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            single_model.to(device)
+            test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
+            loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
+            
+            # Create dictionary of metric functions
+            y_pred, y_true, cliffs = torch.zeros(0, args.num_classes), torch.zeros(0, 1), torch.zeros(0, 1)
+            total_loss, explanation_loss, weighted_explanation_loss =  0.0, 0.0, 0.0
+            graph_count, num_explanation, num_true_explanation = 0, 0, 0
+            com_loss_weight, uncom_loss_weight = float(args.com_loss_weight), float(args.uncom_loss_weight)
+            for data in test_loader:
+                data.to(device)
+                target = data.target.reshape(-1, 1).double().to(device)
+                cliffs = torch.cat((cliffs, data.cliff.cpu().reshape(-1, 1)))
+                potency_diff = data.potency_diff.to(device)
+                output, pooled_uncom_att_diff, common_att = model.explanation_forward(data)
+                uncom_prior = pairwise_ranking_loss(pooled_uncom_att_diff, potency_diff)
+                num_true_explanation += ((pooled_uncom_att_diff * potency_diff) > 0).sum().item()
+                common_prior = torch.square(common_att).sum()
+                loss = loss_func(output, target)
+
+                explanation_loss += uncom_prior.item() + common_prior.item()
+                weighted_explanation_loss += com_loss_weight*common_prior.item() + uncom_loss_weight*uncom_prior.item()      
+
+                num_explanation += torch.count_nonzero(potency_diff).item()
+                total_loss += loss.item()*data.num_graphs
+                y_pred = torch.cat((y_pred, output.cpu().detach().reshape(-1, args.num_classes)))
+                y_true = torch.cat((y_true, target.cpu().detach()))
+            return y_pred, y_true, cliffs
+        y_preds, y_trues = [], []
+        from XACs.utils.metrics import get_metric_func
+        metric_funcs = {metric: get_metric_func(metric=metric) for metric in args.metric}
+        for model in model_list:
+            y_pred, y_true, cliffs = predict_single_model(model)
+            y_preds.append(y_pred)
+            y_trues.append(y_true)
+        y_preds = torch.cat(y_preds, dim=1)
+        y_trues = torch.cat(y_trues, dim=1)
+        y_ensemble_pred = torch.mean(y_preds, dim=1)
+        y_ensemble_true = torch.mean(y_trues, dim=1)
+        # convert cliffs to list
+        cliffs = np.array([cliffs[i].item() for i in range(len(cliffs))])
+        y_ensemble_pred_cliff = y_ensemble_pred[cliffs==1]
+        y_ensemble_true_cliff = y_ensemble_true[cliffs==1]
+        # Calculate all metrics
+        test_scores = {}
+        test_cliff_scores = {}
+        for metric, func in metric_funcs.items():
+            test_scores[metric] = func(y_ensemble_true, y_ensemble_pred)
+            print('test {:.4s}: {:.3f}'.format(metric, test_scores[metric]))
+        for metric, func in metric_funcs.items():
+            test_cliff_scores[metric] = func(y_ensemble_true_cliff, y_ensemble_pred_cliff)
+            print('test {:.4s}: {:.3f}'.format(metric, test_cliff_scores[metric]))        
+        # Add all metrics to all_scores
+        for metric, score in test_scores.items():
+            all_scores[f'gnn_test_{metric}'].append(score)
+            
+        for metric, score in test_cliff_scores.items():
+            all_scores[f'gnn_test_cliff_{metric}'].append(score)
+            
+        print(f'{args.num_folds}-fold cross validation')
+        for key, fold_scores in all_scores.items():
+            mean_score = np.mean(fold_scores)
+            std_score = np.std(fold_scores)
+            print(f'{args.dataset} ==> {key} = {mean_score:.3f} +/- {std_score:.3f}')
+            if args.show_individual_scores:
+                for fold_num, scores in enumerate(fold_scores):
+                    print(f'Seed {init_seed + fold_num} ==> {key} = {scores:.3f}')
+                
+            

@@ -148,6 +148,8 @@ notebooks/
 
 configs/*.py
 *.npy
+*.err
+*.csv
 *.out
 *.log
 *.sh
