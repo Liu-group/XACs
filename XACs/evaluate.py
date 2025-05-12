@@ -3,9 +3,8 @@ from typing import List
 import numpy as np
 from XACs.utils.metrics import get_metric_func
 from XACs.utils.rf_utils import diff_mask
-from XACs.utils.utils import pairwise_ranking_loss
 from XACs.attribution import GradCAM, InputXGrad, IG, SmoothGrad
-from XACs.dataset import MoleculeDataset
+from XACs.dataset import MoleculeDataset, pack_data
 from XACs.featurization import MolTensorizer
 from XACs.models.GNN import GNN
 from XACs.train import predict
@@ -13,8 +12,6 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from sklearn.metrics import f1_score, accuracy_score
-import os
-from copy import deepcopy
 
 def get_gradcam_att(model: GNN, graph: Data) -> torch.Tensor:
     with torch.no_grad():
@@ -238,37 +235,76 @@ def evaluate_rf_explain_direction(cliff_dict, data_test, model_rf):
     print("rf direction score: ", np.mean(rf_score))
     return np.mean(rf_score)
 
-def run_evaluation(args, model, data_test):
+def run_evaluation(args, dataset, data_test, model, metric, xeval=False):
+    """
+    Runs evaluation for a single model using the specified metric.
+    Returns a dictionary of all scores.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
     loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
-    
-    # Create dictionary of metric functions
-    metric_funcs = {metric: get_metric_func(metric=metric) for metric in args.metric}
-    
+    metric_funcs = get_metric_func(metric=metric)
+    scores = {}
+    if xeval:
+        attribution_score, _ = evaluate_gnn_explain_direction(dataset, data_test, model)
+        print("attribution_score: ", attribution_score)
+        for key, value in attribution_score.items():
+            scores[key] = value
+    data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)    
+    test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
+
     y_pred, y_true, cliffs = predict(args, model, test_loader, loss_func, device)
-    # Calculate all metrics
-    test_scores = {}
-    for metric, func in metric_funcs.items():
-        test_scores[metric] = func(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
-        print('test {:.4s}: {:.3f}'.format(metric, test_scores[metric]))
-    
-    test_cliff_scores = {}
-    explan_acc = 0
-    
+    scores[f"test_{metric}"] = metric_funcs(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
+    print('test {:.4s}: {:.3f}'.format(metric, scores[f"test_{metric}"]))    
     if cliffs.sum() > 0:
         y_pred_cliff = y_pred[cliffs==1]
         y_true_cliff = y_true[cliffs==1]
         if sum(y_true_cliff) == 0 or sum(y_true_cliff) == len(y_true_cliff):
             for metric in args.metric:
-                test_cliff_scores[metric] = 0
+                scores[f"test_cliff_{metric}"] = 0
         else:
-            for metric, func in metric_funcs.items():
-                test_cliff_scores[metric] = func(y_true_cliff, y_pred_cliff)
-                print('test cliff {:.4s}: {:.3f}'.format(metric, test_cliff_scores[metric]))
+            scores[f"test_cliff_{metric}"] = metric_funcs(y_true_cliff, y_pred_cliff)
+            print('test cliff {:.4s}: {:.3f}'.format(metric, scores[f"test_cliff_{metric}"]))
+    print("scores: ", scores)
+    return scores
 
-    return test_scores, test_cliff_scores, explan_acc
+def run_evaluation_ensemble(args, dataset: MoleculeDataset, data_test: Data, models: List[GNN], metric, xeval=False):
+    """
+    Runs evaluation for an ensemble of models.
+    Returns a dictionary of all scores.
+    """
+    for model in models:
+        model.eval()
+    metric_funcs = get_metric_func(metric=metric)
+    all_scores = collections.defaultdict(list)
+    if xeval:
+        attribution_score, _ = evaluate_gnn_explain_direction_ensemble(args, dataset, data_test, models)
+        for key, value in attribution_score.items():
+            all_scores[key] = value
+    data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)    
+    y_preds, y_trues = [], []
+    test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
+    for j in range(5):
+        model = models[j]
+        model.to(device)
+        y_pred, y_true, cliffs = predict(args, model, test_loader, loss_func, device)
+        y_preds.append(y_pred)
+        y_trues.append(y_true)
+    y_preds = torch.cat(y_preds, dim=1)
+    y_trues = torch.cat(y_trues, dim=1)
+    y_ensemble_pred = torch.mean(y_preds, dim=1)
+    y_ensemble_true = torch.mean(y_trues, dim=1)
+    cliffs = np.array([cliffs[i].item() for i in range(len(cliffs))])
+    y_ensemble_pred_cliff = y_ensemble_pred[cliffs==1]
+    y_ensemble_true_cliff = y_ensemble_true[cliffs==1]
+    all_scores[f"test_{metric}"] = metric_funcs(y_ensemble_true, y_ensemble_pred)
+    print('test {:.4s}: {:.3f}'.format(metric, all_scores[f"test_{metric}"]))
+    all_scores[f"test_cliff_{metric}"] = metric_funcs(y_ensemble_true_cliff, y_ensemble_pred_cliff)
+    print('test cliff {:.4s}: {:.3f}'.format(metric, all_scores[f"test_cliff_{metric}"]))  
+    return all_scores
+        
 
 def evaluate_gnn_explain_direction_ensemble(args, dataset: MoleculeDataset, data_test: Data, models: List[GNN]):
     """

@@ -154,7 +154,7 @@ class MolTensorizer(object):
         for atom in mol.GetAtoms():
             xs.append(self.atom_features(atom))
         x = np.array(xs)   
-        x = torch.tensor(x).view(-1, self.num_node_feature)
+        x = torch.tensor(x).float().view(-1, self.num_node_feature)
 
         # Get bond features
         edge_indices, edge_attrs = [], []
@@ -174,7 +174,7 @@ class MolTensorizer(object):
         edge_index = torch.tensor(edge_indices)
         edge_index = edge_index.t().type(torch.LongTensor).view(2, -1)
         edge_attrs = np.array(edge_attrs)
-        edge_attr = torch.tensor(edge_attrs).view(-1, self.num_bond_feature)
+        edge_attr = torch.tensor(edge_attrs).float().view(-1, self.num_bond_feature)
 
         # Sort indices.
         if edge_index.numel() > 0:

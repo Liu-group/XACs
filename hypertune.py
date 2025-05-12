@@ -3,14 +3,12 @@ from XACs.utils.parsing import get_args
 from XACs.utils.const import SEARCH_SPACE
 from XACs.train import run_training
 from XACs.models.GNN import GNN
-from cross_validation import cross_validate
 import torch
 from itertools import product
 from functools import partial
 from hyperopt import hp, fmin, tpe, Trials, STATUS_OK
 from hyperopt.early_stop import no_progress_loss
 import numpy as np
-torch.set_default_tensor_type(torch.DoubleTensor)
 import os, sys
 import gc
 class HiddenPrints:
@@ -42,7 +40,7 @@ def grid_search(args, data_train, data_val):
                     dropout_rate=args.dropout_rate,
                     pool=args.pool,
                     heads=args.heads,
-                    ifp=args.ifp,
+                    #ifp=args.ifp,
                 )
         with HiddenPrints():
             score = run_training(args, model, data_train, data_val)
@@ -78,7 +76,7 @@ def hyperopt_search(args, data_train, data_val):
                     dropout_rate=args.dropout_rate,
                     pool=args.pool,
                     heads=args.heads,
-                    ifp=args.ifp,
+                    #ifp=args.ifp,
             )
         print(f"Tuning {args.conv_name} using {args.loss} with node_f: {args.node_hidden_dim},"
                                             f" edge_f: {args.edge_hidden_dim},"
@@ -89,11 +87,11 @@ def hyperopt_search(args, data_train, data_val):
                                             f" layer: {args.num_layers},"
                                             f" hd: {args.hidden_dim},"
                                             f" pool: {args.pool},"
-                                            f" heads: {args.heads}")
+                                            f" heads: {args.heads}" if args.conv_name != 'gat' else "")
         #print("Total number of trainable params: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
         with HiddenPrints():
             try:
-                score = run_training(args, model, data_train, data_val)
+                score = run_training(args, data_train, data_val)
                 score = score if args.minimize_score else -score
             except RuntimeError:
                 score = float('inf') if args.minimize_score else 0
@@ -106,16 +104,17 @@ def hyperopt_search(args, data_train, data_val):
     best = fmin(objective_func, space, algo=tpe.suggest, max_evals=args.max_evals, trials=trials, early_stop_fn=no_progress_loss(args.hpt_patience), rstate=np.random.default_rng(args.seed))
     print(f"Best parameters: {best}")
     # save best parameters
-    config_path = os.path.join(args.config_dir, f"{args.dataset}.pkl")
+    config_path = os.path.join(args.config_dir, f"{args.dataset}_{args.seed}.pkl")
     save_pickle(best, config_path)
     print(f"Best parameters saved at {config_path}!")
+
     return best
 
 if __name__ == '__main__':
     # load config
     args = get_args()
     set_seed(seed=args.seed)
-    best_params = load_pickle(os.path.join(args.config_dir, f"{args.dataset}.pkl"))
+    best_params = load_pickle(os.path.join(args.config_dir, f"{args.dataset}_{args.seed}.pkl"))
     # load data
     SEARCH_SPACE = MPNN_SEARCH_SPACE if args.conv_name == 'nn' else GINE_SEARCH_SPACE
     for arg in SEARCH_SPACE.keys():

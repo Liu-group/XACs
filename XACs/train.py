@@ -19,17 +19,33 @@ from XACs.models.GNN import GNN
 from sklearn.model_selection import train_test_split
 
 def run_training(args: Namespace,
-                 model: GNN, 
                  data_train: List[Data], 
                  data_val: List[Data],
                  ) -> Dict[str, float]:
     """
-    Trains a model and returns the models with the highest validation score for each metric.
     :param model: Model to train.
     :param data_train: Training data.
     :param data_val: Validation data.
     :return: Dictionary of best validation scores for each metric.
     """
+    gnn_config = {
+                'num_node_features': args.num_node_features,
+                'num_edge_features': args.num_edge_features,
+                'node_hidden_dim': args.node_hidden_dim,
+                'edge_hidden_dim': args.edge_hidden_dim,
+                'num_classes': args.num_classes,
+                'conv_name': args.conv_name,
+                'num_layers': args.num_layers,
+                'hidden_dim': args.hidden_dim,
+                'dropout_rate': args.dropout_rate,
+                'pool': args.pool,
+                'heads': args.heads,
+                'uncom_pool': args.uncom_pool,
+                'embed_method': args.embed_method,
+            }       
+    if args.conv_name == 'pna':
+        gnn_config['deg'] = get_deg(data_train)
+    model = GNN(**gnn_config)
     train_loader = DataLoader(data_train, batch_size = args.batch_size, shuffle=False)
     val_loader = DataLoader(data_val, batch_size = args.batch_size, shuffle=False)
 
@@ -122,6 +138,10 @@ def run_training(args: Namespace,
     print('val_loss: {:.4f} at epoch {:04d}'.format(best_val_loss, best_val_loss_epoch))
     for metric, score in best_scores.items():
         print('{:.4s}_val: {:.4f} at epoch {:04d}'.format(metric, score, best_epochs[metric]))
+    
+    del model
+    torch.cuda.empty_cache()
+    return best_scores[args.metric[0]]
         
 
 def train(args, epoch, model, train_loader, loss_func, optimizer, device):
@@ -136,7 +156,7 @@ def train(args, epoch, model, train_loader, loss_func, optimizer, device):
     len_dataloader = len(train_loader)
     for i, data in enumerate(train_loader):
         data.to(device)
-        target = data.target.reshape(-1, 1).double().to(device)
+        target = data.target.reshape(-1, 1).to(device)
         if args.loss == 'MSE':
             output = model(data.x, data.edge_attr, data.edge_index.type(torch.LongTensor).to(device), data.batch.to(device))
             common_prior = uncom_prior = 0.
@@ -187,7 +207,7 @@ def evaluate(args, model, val_loader, loss_func, metric_funcs, device):
             x, edge_index = data.x.to(device), data.edge_index.type(torch.LongTensor).to(device)
             edge_attr = data.edge_attr.to(device)
             batch = data.batch.to(device)
-            target = data.target.reshape(-1, 1).double().to(device)
+            target = data.target.reshape(-1, 1).to(device)
             out = model(x, edge_attr, edge_index, batch)
             loss = loss_func(out, target)
             total_loss += loss.item()*data.num_graphs
@@ -207,13 +227,14 @@ def predict(args, model, test_loader, loss_func, device):
     Evaluates a model on a test set using explanation_forward (performing backpropagation).
     """
     model.eval()
+    model.to(device)
     y_pred, y_true, cliffs = torch.zeros(0, args.num_classes), torch.zeros(0, 1), torch.zeros(0, 1)
     total_loss, explanation_loss, weighted_explanation_loss =  0.0, 0.0, 0.0
     graph_count, num_explanation, num_true_explanation = 0, 0, 0
     com_loss_weight, uncom_loss_weight = float(args.com_loss_weight), float(args.uncom_loss_weight)
     for data in test_loader:
         data.to(device)
-        target = data.target.reshape(-1, 1).double().to(device)
+        target = data.target.reshape(-1, 1).to(device)
         cliffs = torch.cat((cliffs, data.cliff.cpu().reshape(-1, 1)))
         potency_diff = data.potency_diff.to(device)
         output, pooled_uncom_att_diff, common_att = model.explanation_forward(data)
@@ -244,7 +265,23 @@ def run_cv_train(args, data_train, gnn_config):
     Adopt from https://github.com/shenwanxiang/ACANet/blob/main/clsar/main.py#L185 _cv_split(
     """
     from sklearn.model_selection import StratifiedKFold
-
+    gnn_config = {
+                        'num_node_features': args.num_node_features,
+                        'num_edge_features': args.num_edge_features,
+                        'node_hidden_dim': args.node_hidden_dim,
+                        'edge_hidden_dim': args.edge_hidden_dim,
+                        'num_classes': args.num_classes,
+                        'conv_name': args.conv_name,
+                        'num_layers': args.num_layers,
+                        'hidden_dim': args.hidden_dim,
+                        'dropout_rate': args.dropout_rate,
+                        'pool': args.pool,
+                        'heads': args.heads,
+                        'uncom_pool': args.uncom_pool,
+                        'embed_method': args.embed_method,
+                    }       
+    if args.conv_name == 'pna':
+        gnn_config['deg'] = get_deg(data_train)
     KFold = StratifiedKFold(n_splits=5, shuffle=True, random_state=args.seed)
     y_all = [data.target for data in data_train]
     cutoff = np.median(y_all)

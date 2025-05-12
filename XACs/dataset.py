@@ -82,11 +82,7 @@ class MoleculeDataset:
             train_idx, val_idx = train_test_split(train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]), random_state=seed, stratify=[self.y_all[i] for i in train_idx] if self.task_type == 'classification' else None)
         elif split_method == 'cliff':
             assert self.cliff_mols is not None, "No cliff information available"
-            if split_ratio[1] == 0:
-                train_idx, test_idx = cliff_train_test_split(self.smiles_all, self.y_all, self.cliff_mols, split_ratio=split_ratio, n_clusters=n_clusters, seed=seed)
-                val_idx = []
-            else:
-                train_idx, val_idx, test_idx = cliff_split(self.smiles_all, self.y_all, self.cliff_mols, split_ratio=split_ratio, n_clusters=n_clusters, seed=seed)
+            train_idx, val_idx, test_idx = cliff_split(self.smiles_all, self.y_all, self.cliff_mols, split_ratio=split_ratio, n_clusters=n_clusters, seed=seed)
         elif split_method == 'scaffold':
             import deepchem as dc
             pseudo_dataset = dc.data.DiskDataset.from_numpy(X=np.zeros((len(self.smiles_all))), y=np.zeros(len(self.smiles_all)), ids=self.smiles_all)
@@ -263,58 +259,34 @@ def cliff_split(smiles_all,
         clusters = spectral.fit(get_tanimoto_matrix(smiles_all)).labels_
         train_idx, val_idx, test_idx = [], [], []
         for cluster in range(n_clusters):
-                cluster_idx = np.where(clusters == cluster)[0]
-                clust_cliff_mols = [cliff_mols[i] for i in cluster_idx]
-                # Can only split stratiefied on cliffs if there are at least 3 cliffs present, else do it randomly
-                if sum(clust_cliff_mols) > 3:
-                    clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
-                                                                    random_state=seed,
-                                                                    stratify=clust_cliff_mols, shuffle=True)
-                    clust_train_idx, clust_val_idx = train_test_split(clust_train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]),
-                                                                    random_state=seed,
-                                                                    stratify=[cliff_mols[i] for i in clust_train_idx], shuffle=True)
-                else:
-                    clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
-                                                                    random_state=seed,
-                                                                    shuffle=True)
-                    clust_train_idx, clust_val_idx = train_test_split(clust_train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]),
-                                                                    random_state=seed,
-                                                                    shuffle=True)
-    
-                train_idx.extend(clust_train_idx)
-                val_idx.extend(clust_val_idx)
-                test_idx.extend(clust_test_idx)
-
-        return train_idx, val_idx, test_idx
-
-def cliff_train_test_split(smiles_all,
-                           y_all,
-                           cliff_mols,  
-                           split_ratio: List[float] = [0.8, 0.0, 0.2],
-                           n_clusters: int = 5,
-                           seed: int = 42):
-        """
-        Split data into train/test according to activity cliffs. Adpated from "Exposing the Limitations of Molecular Machine Learning with Activity Cliffs"
-        """
-        # Perform spectral clustering on a tanimoto distance matrix
-        spectral = SpectralClustering(n_clusters=n_clusters, random_state=seed, affinity='precomputed')
-        clusters = spectral.fit(get_tanimoto_matrix(smiles_all)).labels_
-        train_idx, test_idx = [], []
-        for cluster in range(n_clusters):
             cluster_idx = np.where(clusters == cluster)[0]
-            clust_cliff_mols = [cliff_mols[i] for i in cluster_idx] 
+            clust_cliff_mols = [cliff_mols[i] for i in cluster_idx]
+            # Can only split stratiefied on cliffs if there are at least 3 cliffs present, else do it randomly
             if sum(clust_cliff_mols) > 3:
                 clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
                                                                 random_state=seed,
                                                                 stratify=clust_cliff_mols, shuffle=True)
+                if split_ratio[1] > 0:
+                    clust_train_idx, clust_val_idx = train_test_split(clust_train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]),
+                                                                    random_state=seed,
+                                                                    stratify=[cliff_mols[i] for i in clust_train_idx], shuffle=True)
             else:
                 clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
                                                                 random_state=seed,
-                                                                shuffle=True)   
+                                                                shuffle=True)
+                if split_ratio[1] > 0:
+                    clust_train_idx, clust_val_idx = train_test_split(clust_train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]),
+                                                                    random_state=seed,
+                                                                    shuffle=True)
+
             train_idx.extend(clust_train_idx)
+            val_idx.extend(clust_val_idx if split_ratio[1] > 0 else [])
             test_idx.extend(clust_test_idx)
 
-        return train_idx, test_idx
+        return train_idx, val_idx, test_idx
+
+
+
 
 
 

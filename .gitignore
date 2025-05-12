@@ -147,6 +147,7 @@ scripts/
 notebooks/
 
 configs/*.py
+*.pkl
 *.npy
 *.err
 *.csv

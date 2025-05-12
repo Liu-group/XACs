@@ -3,7 +3,7 @@ import random
 import inspect
 from argparse import Namespace
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import Optional
 import pickle
 from XACs.models.GNN import GNN
 import torch
@@ -67,11 +67,12 @@ def get_model_args(args):
     model_args.remove('self')
     return model_args
 
-def load_checkpoint(current_args: Namespace):
+def load_checkpoint(current_args: Namespace, checkpoint_path: Optional[str] = None):
     """
     Loads a model checkpoint.
     """
-    checkpoint_path = os.path.join(current_args.model_dir, current_args.dataset, f'{current_args.dataset}_{current_args.loss}_model_{current_args.seed}.pt') if current_args.checkpoint_path is None else current_args.checkpoint_path 
+    if checkpoint_path is None:
+        checkpoint_path = os.path.join(current_args.model_dir, current_args.dataset, f'{current_args.dataset}_{current_args.loss}_model_{current_args.seed}.pt')
     assert os.path.exists(checkpoint_path), f"Checkpoint {checkpoint_path} not found"
     print(f"Loading model from {checkpoint_path}")
     if current_args.gpu is not None:

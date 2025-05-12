@@ -3,7 +3,7 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser()
     # common
-    parser.add_argument("--seed", type=int, default=42, help="seed")
+    parser.add_argument("--seed", type=int, default=43, help="seed")
     parser.add_argument("--gpu", type=int, default=None, help="cuda")
     parser.add_argument('--save_checkpoints', type=bool, default=True)
     parser.add_argument('--model_dir', type=str, default='results_cv') #Benchmark_Data
@@ -17,7 +17,6 @@ def get_args():
 
     parser.add_argument('--sim_threshold', type=float, default=0.9, help='threshold for similarity')
     parser.add_argument('--dist_threshold', type=float, default=1.0, help='threshold for distance')
-    parser.add_argument('--mode', type=str, default='cross_validation', help='cross_validation or train_test or test or hypertune or cross_test')
     parser.add_argument('--split', type=list, default=[0.8, 0.1, 0.1])
     parser.add_argument('--split_method', type=str, default='cliff', help='random or cliff split')
 
@@ -26,8 +25,6 @@ def get_args():
     parser.add_argument('--hpt_patience', type=int, default=10)
     parser.add_argument('--use_gnn_opt_params', type=bool, default=True) # use optimal parameters
     parser.add_argument('--use_opt_xweight', type=bool, default=True) # use optimal explanation weight
-    parser.add_argument('--tune_type', type=str, default='hyperopt_search') # hyperopt_search or grid_search; 
-    #if grid_search, use_opt_params should be True
 
    # cross validation
     parser.add_argument('--num_folds', type=int, default=9)
