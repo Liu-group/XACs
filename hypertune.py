@@ -22,30 +22,16 @@ class HiddenPrints:
 
 # grid search
 def grid_search(args, data_train, data_val):
-    SEARCH_SPACE = [0.05, 0.045, 0.04, 0.035, 0.03, 0.025, 0.02, 0.015, 0.01, 0.005]#, 0.001, 0.1]
+    SEARCH_SPACE = [0.5, 0.2, 0.1, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.005, 0.001]#, 0.001, 0.1]
     best_score = float('inf') if args.minimize_score else -float('inf')
     for w in SEARCH_SPACE:
         args.com_loss_weight = args.uncom_loss_weight = w
         args.loss = "MSE+direction"
         print(f"Running training for {args.dataset} using {args.loss} with explanation weight {w}")
         set_seed(seed=args.seed)
-        model = GNN(num_node_features=args.num_node_features, 
-                    num_edge_features=args.num_edge_features,
-                    node_hidden_dim=args.node_hidden_dim,
-                    edge_hidden_dim=args.edge_hidden_dim,
-                    num_classes=args.num_classes,
-                    conv_name=args.conv_name,
-                    num_layers=args.num_layers,
-                    hidden_dim=args.hidden_dim,
-                    dropout_rate=args.dropout_rate,
-                    pool=args.pool,
-                    heads=args.heads,
-                    #ifp=args.ifp,
-                )
         with HiddenPrints():
-            score = run_training(args, model, data_train, data_val)
+            score = run_training(args, data_train, data_val)
         print(f"Score: {score}")
-        del model
         #gc.collect()
         #torch.cuda.empty_cache()
         if args.minimize_score and score < best_score or \
@@ -54,7 +40,7 @@ def grid_search(args, data_train, data_val):
             best_params = w
     print(f"Best parameters: {best_params}")
     # save best parameters
-    save_pickle({"weight": best_params}, os.path.join(args.config_dir, f"{args.dataset}_exweight.pkl"))
+    save_pickle({"weight": best_params}, os.path.join(args.config_dir, f"{args.dataset}_exweight_{args.seed}.pkl"))
     print("Best parameters saved!")
     return best_params
 
@@ -65,19 +51,6 @@ def hyperopt_search(args, data_train, data_val):
         for key, value in params.items():
             setattr(args, key, value)
         set_seed(seed=args.seed)
-        model = GNN(num_node_features=args.num_node_features, 
-                    num_edge_features=args.num_edge_features,
-                    node_hidden_dim=args.node_hidden_dim,
-                    edge_hidden_dim=args.edge_hidden_dim,
-                    num_classes=args.num_classes,
-                    conv_name=args.conv_name,
-                    num_layers=args.num_layers,
-                    hidden_dim=args.hidden_dim,
-                    dropout_rate=args.dropout_rate,
-                    pool=args.pool,
-                    heads=args.heads,
-                    #ifp=args.ifp,
-            )
         print(f"Tuning {args.conv_name} using {args.loss} with node_f: {args.node_hidden_dim},"
                                             f" edge_f: {args.edge_hidden_dim},"
                                             f" p: {args.dropout_rate},"
@@ -88,14 +61,13 @@ def hyperopt_search(args, data_train, data_val):
                                             f" hd: {args.hidden_dim},"
                                             f" pool: {args.pool},"
                                             f" heads: {args.heads}" if args.conv_name != 'gat' else "")
-        #print("Total number of trainable params: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
         with HiddenPrints():
             try:
                 score = run_training(args, data_train, data_val)
                 score = score if args.minimize_score else -score
             except RuntimeError:
                 score = float('inf') if args.minimize_score else 0
-        del model, data_train, data_val
+        del data_train, data_val
         gc.collect()
         torch.cuda.empty_cache()
         return {"loss": score, "status": STATUS_OK}

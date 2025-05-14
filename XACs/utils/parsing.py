@@ -62,6 +62,7 @@ def get_args():
     parser.add_argument('--uncom_pool', type=str, default='add') # mean or add
     parser.add_argument('--normalize_att', type=bool, default=False)
     parser.add_argument('--gnes', type=bool, default=False)
+    parser.add_argument('--att_method', type=str, default=None)
     parser.add_argument('--xscheduler', type=bool, default=False)
 
     return parser.parse_args()

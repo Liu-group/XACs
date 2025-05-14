@@ -15,7 +15,6 @@ import json
 
 if __name__ == '__main__':
     args = get_args()
-    sim_thre = args.sim_threshold
     dataset = MoleculeDataset(args.dataset, args.data_dir)   
     dataset.get_cliffs(args.sim_struct if args.sim_struct== 'mmp' else (args.sim_struct, args.sim_threshold), args.dist_threshold)
     args.num_node_features=dataset.num_node_features
@@ -49,17 +48,17 @@ if __name__ == '__main__':
         if args.loss != 'MSE':
             data_train = pack_data(data_train, dataset.cliff_dict)
             if args.use_opt_xweight:
-                config_file_exweight = os.path.join(args.config_dir, f"{args.dataset}_exweight.pkl")
+                config_file_exweight = os.path.join(args.config_dir, f"{args.dataset}_exweight_{current_args.seed}.pkl")
                 if os.path.exists(config_file_exweight):
-                    best_params = load_pickle(config_file_exweight)
+                    best_params = load_pickle(config_file_exweight)['weight']
                     print(f"Best explanation weight for {args.dataset} loaded from {config_file_exweight}!")
                 else:
-                    print(f"Best explanation weight for {args.dataset} not found! Start hyperopt search...")
+                    print(f"Best explanation weight for {args.dataset} not found! Start grid search...")
                     current_args.save_checkpoints = False
                     best_params = grid_search(current_args, data_train, data_val)
                     print(f"Best explanation weight for {args.dataset} loaded from grid search!")
-                setattr(current_args, 'com_loss_weight', best_params['weight'])
-                setattr(current_args, 'uncom_loss_weight', best_params['weight'])
+                setattr(current_args, 'com_loss_weight', best_params)
+                setattr(current_args, 'uncom_loss_weight', best_params)
                 print(f"com_loss_weight: {current_args.com_loss_weight}")
                 print(f"uncom_loss_weight: {current_args.uncom_loss_weight}")
 

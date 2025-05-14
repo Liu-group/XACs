@@ -110,6 +110,7 @@ def load_checkpoint(current_args: Namespace, checkpoint_path: Optional[str] = No
                 pool='mean',
                 heads=current_args.heads,
                 embed_method=current_args.embed_method,
+                att_method=current_args.att_method,
                 deg=current_args.deg if hasattr(current_args, 'deg') else None
                 )
     model.load_state_dict(model_state_dict)

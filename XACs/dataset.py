@@ -149,8 +149,8 @@ def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None) -> Dat
     com_atom_mask_i = [[0, 0, 0, 1, 1, 1],
                        [1, 0, 0, 1, 1, 1],
                        [0, 0, 0, 0, 0, 0]]
-    meaning the first 3 atoms are the target attribution substrucutre of molecule i corresponding to the first cliff pair,
-    the 2rd and 3rd atoms are the target attribution substrucutre of molecule i corresponding to the second cliff pair;
+    meaning the first 3 atoms (first row) are the target attribution substructure of molecule i corresponding to the first cliff pair,
+    the 2rd and 3rd atoms (second row) are the target attribution substructure of molecule i corresponding to the second cliff pair;
 
     uncom_atom_mask_j = [[-1, 0, 0, 0],
                         [  0, 0, 0, 0],
@@ -165,8 +165,8 @@ def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None) -> Dat
     common_atom_mask_k = [[0,  0, 0, 0,  0, 0],
                         [-1,  0, -1, -1,  0, -1],
                         [0,  0, 0, 0,  0, 0]]
-    meaning the first 3 atoms are the target attribution substrucutre of molecule j;
-    the 2rd and 5th atoms are the target attribution substrucutre of molecule k;
+    meaning the first atom is the uncommon attribution substructure of molecule j;
+    the 2rd and 5th atoms are the uncommon attribution substructure of molecule k;
     uncom_atom_mask = [[1, 1, 1, 0, 0, 0, -1,  0,  0, 0, 0,  0, 0, 0,  0, 0],
                        [0, 1, 1, 0, 0, 0,  0,  0,  0, 0, 0, -1, 0, 0, -1, 0],
                        [0, 0, 0, 0, 0, 0,  0,  0,  0, 0, 0,  0, 0, 0,  0, 0]] 

@@ -42,6 +42,7 @@ def run_training(args: Namespace,
                 'heads': args.heads,
                 'uncom_pool': args.uncom_pool,
                 'embed_method': args.embed_method,
+                'att_method': args.att_method,
             }       
     if args.conv_name == 'pna':
         gnn_config['deg'] = get_deg(data_train)
@@ -167,6 +168,15 @@ def train(args, epoch, model, train_loader, loss_func, optimizer, device):
             explanation_loss += common_prior.item()
             weighted_explanation_loss += com_loss_weight*common_prior.item()
             num_explanation += data.num_graphs
+        elif args.att_method == 'mlp':
+            #print('Using MLP attribution')
+            potency_diff = data.potency_diff.to(device)
+            output, pooled_uncom_att, common_att = model.mlp_att_forward(data)
+            uncom_prior = pairwise_ranking_loss(pooled_uncom_att, potency_diff)
+            common_prior = torch.square(common_att).sum()
+            explanation_loss += uncom_prior.item() + common_prior.item()
+            weighted_explanation_loss += com_loss_weight*common_prior.item() + uncom_loss_weight*uncom_prior.item()
+            num_explanation += torch.count_nonzero(potency_diff).item()
         else:
             if args.xscheduler:
                 p = float(i + epoch * len_dataloader) / args.epochs / len_dataloader
