@@ -141,11 +141,11 @@ archive_files/
 results*/
 TUDataset/
 visualization/
-GNN.py
 tools/
 scripts/
-notebooks/
+notebooks/archive/
 
+.vscode/
 configs/*.py
 *.pkl
 *.npy
@@ -161,7 +161,6 @@ configs/*.py
 *.pdf
 *.zip
 *.pt
-*.ipynb
 *.mat
 *.pyc
 *.frag
@@ -170,8 +169,7 @@ configs/*.py
 *default*
 *None*
 *_811_*
-run_task.py
-BBBP_utils.py
+run_task_complete.py
 main_rf.py
 
 Data/split_lo_train_val.py

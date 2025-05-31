@@ -33,13 +33,11 @@ SEARCH_SPACE = {
     'nn': {
         "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
         "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
-        "weight_decay": hp.choice("weight_decay", [0., 1e-4, 1e-6]),
-        "num_layers": hp.choice("num_layers", [2, 4, 6, 8]),
-        #"batch_size": hp.choice("batch_size", [32, 64, 128]), 
-        "node_hidden_dim": hp.choice("node_hidden_dim", [64, 32, 16]),
-        "edge_hidden_dim": hp.choice("edge_hidden_dim", [64, 32, 16]),       
+        "weight_decay": hp.choice("weight_decay", [0., 1e-3, 1e-4]),
+        "num_layers": hp.choice("num_layers", [2, 3, 4, 5]),
+        "batch_size": hp.choice("batch_size", [32, 64, 128]), 
         "hidden_dim": hp.choice("hidden_dim", [64, 128, 256]), 
-        "pool": hp.choice("pool", ["mean", "add", "max"])}, 
+        "pool": hp.choice("pool", ["mean", "add"])}, 
     'gine': {
         "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
         "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
@@ -62,7 +60,7 @@ SEARCH_SPACE = {
         "heads": hp.choice("heads", [1, 4, 8]),
         "pool": hp.choice("pool", ["mean", "add", "max"]), },
     'dmpnn': {
-        "dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
+        #"dropout_rate": hp.choice("dropout_rate", [0., 0.2, 0.5]),
         "lr": hp.choice("lr", [1e-3, 3e-4, 1e-4]),
         "weight_decay": hp.choice("weight_decay", [0., 1e-4, 1e-6]),
         "node_hidden_dim": hp.choice("node_hidden_dim", [64, 32, 16]),
@@ -70,6 +68,6 @@ SEARCH_SPACE = {
         "num_layers": hp.choice("num_layers", [2, 4, 6, 8]),
         #"batch_size": hp.choice("batch_size", [32, 64, 128]),
         "hidden_dim": hp.choice("hidden_dim", [64, 128, 256]),
-        "pool": hp.choice("pool", ["add", "max"]), },
+         },
 
     } 

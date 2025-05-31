@@ -3,9 +3,9 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser()
     # common
-    parser.add_argument("--seed", type=int, default=43, help="seed")
+    parser.add_argument("--seed", type=int, default=42, help="seed")
     parser.add_argument("--gpu", type=int, default=None, help="cuda")
-    parser.add_argument('--save_checkpoints', type=bool, default=True)
+    parser.add_argument('--save_checkpoints', type=str2bool, default=True)
     parser.add_argument('--model_dir', type=str, default='results_cv') #Benchmark_Data
     parser.add_argument('--config_dir', type=str, default='./configs/nn_configs') # mpnn_configs
     parser.add_argument('--data_dir', type=str, default='Data')#'Benchmark_Data' or 'QSAR_ACs' or 'Data'
@@ -23,30 +23,30 @@ def get_args():
     # hypertune
     parser.add_argument('--max_evals', type=int, default=50)
     parser.add_argument('--hpt_patience', type=int, default=10)
-    parser.add_argument('--use_gnn_opt_params', type=bool, default=True) # use optimal parameters
-    parser.add_argument('--use_opt_xweight', type=bool, default=True) # use optimal explanation weight
+    parser.add_argument('--use_gnn_opt_params', type=str2bool, default=True) # use optimal parameters
+    parser.add_argument('--use_opt_xweight', type=str2bool, default=True) # use optimal explanation weight
 
    # cross validation
-    parser.add_argument('--num_folds', type=int, default=9)
-    parser.add_argument('--show_individual_scores', type=bool, default=True)
+    parser.add_argument('--num_folds', type=int, default=10)
+    parser.add_argument('--show_individual_scores', type=str2bool, default=True)
     # GNN
-    parser.add_argument('--ensemble', type=bool, default=False)
+    parser.add_argument('--ensemble', type=str2bool, default=False)
     parser.add_argument('--embed_method', type=str, default='linear', choices=['linear', 'ifp', 'original'], 
                    help='embedding method: linear, ifp, or original features')
     parser.add_argument('--num_node_features', type=int, default=42)
     parser.add_argument('--num_edge_features', type=int, default=6)
     parser.add_argument('--node_hidden_dim', type=int, default=64)
     parser.add_argument('--edge_hidden_dim', type=int, default=64)
-    parser.add_argument('--conv_name', type=str, default='pna') # nn, gine, gat, dmpnn, pna
+    parser.add_argument('--conv_name', type=str, default='nn') # nn, gine, gat, dmpnn, pna
     parser.add_argument('--num_layers', type=int, default=4)
-    parser.add_argument('--hidden_dim', type=int, default=512)
+    parser.add_argument('--hidden_dim', type=int, default=256)
     parser.add_argument('--heads', type=int, default=8)
     parser.add_argument('--pool', type=str, default='mean') 
-    parser.add_argument('--attribute_to_last_layer', type=bool, default=True)   
+    parser.add_argument('--attribute_to_last_layer', type=str2bool, default=True)   
     # training
     parser.add_argument('--dropout_rate', type=float, default=0.)
-    parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--early_stop_epoch', type=int, default=50)
+    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--early_stop_epoch', type=int, default=500)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=0.)
@@ -66,5 +66,15 @@ def get_args():
     parser.add_argument('--xscheduler', type=bool, default=False)
 
     return parser.parse_args()
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 

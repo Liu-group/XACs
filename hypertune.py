@@ -22,7 +22,7 @@ class HiddenPrints:
 
 # grid search
 def grid_search(args, data_train, data_val):
-    SEARCH_SPACE = [0.5, 0.2, 0.1, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.005, 0.001]#, 0.001, 0.1]
+    SEARCH_SPACE = [0.05, 0.045, 0.04, 0.035, 0.03, 0.025, 0.02, 0.015, 0.01, 0.005]
     best_score = float('inf') if args.minimize_score else -float('inf')
     for w in SEARCH_SPACE:
         args.com_loss_weight = args.uncom_loss_weight = w
@@ -32,8 +32,9 @@ def grid_search(args, data_train, data_val):
         with HiddenPrints():
             score = run_training(args, data_train, data_val)
         print(f"Score: {score}")
-        #gc.collect()
-        #torch.cuda.empty_cache()
+        #del data_train, data_val
+        gc.collect()
+        torch.cuda.empty_cache()
         if args.minimize_score and score < best_score or \
                 not args.minimize_score and score > best_score:
             best_score = score
