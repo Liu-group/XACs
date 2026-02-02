@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import pickle
 from rdkit import Chem
-from rdkit.Chem import AllChem, DataStructs, rdFMCS
+from rdkit.Chem import DataStructs, rdFMCS
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 from Levenshtein import distance as levenshtein
 from tqdm import tqdm
 import collections
@@ -14,6 +15,16 @@ from XACs.utils.const import TIMEOUT_MCS
 from multiprocessing import Pool, cpu_count
 
 NPROC = cpu_count()
+
+
+def _get_morgan_bitvect(mol: Chem.Mol, radius: int, nBits: int):
+    """
+    Build a Morgan fingerprint bit vector.
+    """
+    # Create the generator with the requested radius/size.
+    fp_gen = GetMorganGenerator(radius=radius, fpSize=nBits)
+    # Return a fixed-length bit vector fingerprint for similarity scoring.
+    return fp_gen.GetFingerprintAsBitVect(mol)
 
 class ActivityCliffs:
     """ Activity cliff class that find cliff pairs and
@@ -241,15 +252,15 @@ def get_scaffold_score(smiles_i: str, smiles_j: str, radius: int = 2, nBits: int
     except Exception:  # In the very rare case this doesn't work, use a normal scaffold
         print(f"Could not create a generic scaffold of {smiles_i or smiles_j}, used a normal scaffold instead")
         skeleton_i, skeleton_j = GetScaffoldForMol(mol_i), GetScaffoldForMol(mol_j)
-    skeleton_fp_i = AllChem.GetMorganFingerprintAsBitVect(skeleton_i, radius=radius, nBits=nBits)
-    skeleton_fp_j = AllChem.GetMorganFingerprintAsBitVect(skeleton_j, radius=radius, nBits=nBits)
+    skeleton_fp_i = _get_morgan_bitvect(skeleton_i, radius=radius, nBits=nBits)
+    skeleton_fp_j = _get_morgan_bitvect(skeleton_j, radius=radius, nBits=nBits)
     score = DataStructs.TanimotoSimilarity(skeleton_fp_i, skeleton_fp_j)
     return score
 
 def get_tanimoto_score(smiles_i: str, smiles_j: str, radius: int = 2, nBits: int = 1024):
     mol_i, mol_j = Chem.MolFromSmiles(smiles_i), Chem.MolFromSmiles(smiles_j)
-    fp_i  = AllChem.GetMorganFingerprintAsBitVect(mol_i, radius=radius, nBits=nBits)
-    fp_j = AllChem.GetMorganFingerprintAsBitVect(mol_j, radius=radius, nBits=nBits)
+    fp_i = _get_morgan_bitvect(mol_i, radius=radius, nBits=nBits)
+    fp_j = _get_morgan_bitvect(mol_j, radius=radius, nBits=nBits)
     score = DataStructs.TanimotoSimilarity(fp_i, fp_j)
     return score
 

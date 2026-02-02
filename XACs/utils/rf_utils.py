@@ -4,7 +4,8 @@
 from copy import deepcopy
 from typing import Callable, List, Tuple
 import numpy as np
-from rdkit.Chem import AllChem, DataStructs, MolFromSmiles, rdchem
+from rdkit.Chem import DataStructs, MolFromSmiles, rdchem
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 
 
 FP_SIZE = 1024
@@ -28,7 +29,8 @@ def featurize_ecfp4(mol: rdchem.Mol, fp_size=FP_SIZE, bond_radius=BOND_RADIUS):
     """
     Gets an ECFP4 fingerprint for a specific rdkit mol.
     """
-    fp = AllChem.GetMorganFingerprintAsBitVect(mol, bond_radius, nBits=fp_size)
+    fp_gen = GetMorganGenerator(radius=bond_radius, fpSize=fp_size)
+    fp = fp_gen.GetFingerprintAsBitVect(mol)
     arr = np.zeros((1,), dtype=np.float32)
     DataStructs.ConvertToNumpyArray(fp, arr)
     return arr

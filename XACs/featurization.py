@@ -68,7 +68,7 @@ class MolTensorizer(object):
         # compute atom features
         atom_type_enc = one_hot_encoding(str(atom.GetSymbol()), atom_types)
         implicit_valence_enc = one_hot_encoding(
-            int(atom.GetImplicitValence()), [0, 1, 2, 3, 4, "MoreThanFour"]
+            int(atom.GetValence(Chem.ValenceType.IMPLICIT)), [0, 1, 2, 3, 4, "MoreThanFour"]
         )
         n_heavy_neighbors_enc = one_hot_encoding(
             int(atom.GetDegree()), [1, 2, 3, 4, "MoreThanFour"]
