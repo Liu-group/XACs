@@ -90,22 +90,22 @@ jupyter notebook notebooks/
 
 ## Project Structure
 ```
-ACES-GNN/
-├── main.py                 # Main execution script
-├── run_task.py            # Batch experiment runner for paper reproduction
-├── Data/                  # Dataset directory
-├── configs/               # Configuration files
+XACs/
+├── main.py                      # Main entrypoint (cross-validation train/eval)
+├── run_task.py                  # Batch runner (SLURM submission helper)
+├── hypertune.py                 # Hyperparameter tuning (hyperopt + grid search)
+├── requirement.txt              # Python dependencies (see Dependencies section)
+├── Data/                        # Dataset directory (place datasets here)
+├── configs/                     # Per-backbone configuration files
 │   ├── nn_configs/
 │   ├── gat_configs/
 │   └── gine_configs/
-├── results/               # Experimental results
-│   ├── results_cv/        # Cross-validation results (MSE loss)
-│   └── results_cv_x/      # Cross-validation results (MSE+direction loss)
-├── notebooks/             # Jupyter notebooks for results analysis
-├── XACs/                  # Core implementation
-│   └── utils/
-│       ├── parsing.py     # Command line argument parsing
-│       └── const.py       # Dataset constants
+├── results/                     # Outputs/checkpoints (e.g., results_cv/, results_cv_x/)
+├── notebooks/                   # Jupyter notebooks for analysis/plots
+├── XACs/                        # Core library code (models, training, evaluation, utilities)
+│   ├── attribution/             # Attribution methods (e.g., GradCAM)
+│   ├── models/                  # GNN backbones/architectures
+│   └── utils/                   # CLI parsing, constants, helpers
 └── README.md
 ```
 

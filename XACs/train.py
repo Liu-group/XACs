@@ -14,7 +14,7 @@ from torch_scatter import scatter
 from XACs.utils.explain_utils import process_layer_gradients_and_eval
 from XACs.utils.utils import save_checkpoint, load_checkpoint, pairwise_ranking_loss, get_deg
 from XACs.utils.metrics import get_metric_func
-from XACs.dataset import MoleculeDataset
+from XACs.dataset import MoleculeDataset, pack_data
 from XACs.models.GNN import GNN
 from sklearn.model_selection import train_test_split
 
@@ -47,7 +47,7 @@ def run_training(args: Namespace,
     if args.conv_name == 'pna':
         gnn_config['deg'] = get_deg(data_train)
     model = GNN(**gnn_config)
-    train_loader = DataLoader(data_train, batch_size = args.batch_size, shuffle=False)
+    train_loader = DataLoader(data_train, batch_size = args.batch_size, shuffle=True)
     val_loader = DataLoader(data_val, batch_size = args.batch_size, shuffle=False)
 
     loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
@@ -115,7 +115,7 @@ def run_training(args: Namespace,
                 checkpoint_path = os.path.join(args.model_dir, args.dataset, 
                                              f'{args.dataset}_{args.loss}_model_{args.seed}_val_loss.pt')
                 save_checkpoint(checkpoint_path, model, args)
-                #print(f'Saved best validation loss model at epoch {epoch}')
+                #print(f'Saved best validation loss model at epoch {epoch} at {checkpoint_path}')
                 
         # Check for improvement in each metric and save corresponding model
         for metric, score in val_scores.items():
@@ -127,7 +127,7 @@ def run_training(args: Namespace,
                     checkpoint_path = os.path.join(args.model_dir, args.dataset, 
                                                  f'{args.dataset}_{args.loss}_model_{args.seed}_{metric}.pt')
                     save_checkpoint(checkpoint_path, model, args)
-                    #print(f'Saved best {metric} model at epoch {epoch}')
+                    #print(f'Saved best {metric} model at epoch {epoch} at {checkpoint_path}')
                     
         # Early stopping based on validation loss
         if args.early_stop_epoch is not None and epoch - best_val_loss_epoch > args.early_stop_epoch:
@@ -269,7 +269,7 @@ def predict(args, model, test_loader, loss_func, device):
     return y_pred, y_true, cliffs
 
 
-def run_cv_train(args, data_train, gnn_config):
+def run_cv_train(args, data_train: List[Data], dataset: MoleculeDataset, gnn_config=None):
     """
     Trains a model on a K-Fold cross-validation set, returns the best model for each fold.
     Adopt from https://github.com/shenwanxiang/ACANet/blob/main/clsar/main.py#L185 _cv_split(
@@ -301,12 +301,17 @@ def run_cv_train(args, data_train, gnn_config):
     for i, split in enumerate(splits):
         inner_train_data = [data_train[idx] for idx in split['inner_train_idx']]
         inner_val_data = [data_train[idx] for idx in split['inner_val_idx']]
-        args.seed = initial_fold_seed * 10 + i
+        print(f"Training fold {i+1} with seed {args.seed}")
         if args.conv_name == 'pna':
             args.deg = get_deg(inner_train_data)
-        gnn_config['deg'] = args.deg
-        model = GNN(**gnn_config)    
-        _ = run_training(args, model, inner_train_data, inner_val_data)
+            gnn_config['deg'] = args.deg
+        # Pack training data if using explanation loss (validation stays unpacked)
+        if args.loss != 'MSE':
+            inner_train_data = pack_data(inner_train_data, dataset.cliff_dict, pair_cap=args.pair_cap)
+        args.seed = initial_fold_seed * 10 + i
+        _ = run_training(args, inner_train_data, inner_val_data)
+    # Restore original seed to avoid compounding on subsequent calls.
+    args.seed = initial_fold_seed
     print("All folds trained")
         
         

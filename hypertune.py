@@ -40,7 +40,7 @@ def grid_search(args, data_train, data_val):
             best_score = score
             best_params = w
     print(f"Best parameters: {best_params}")
-    # save best parameters
+    os.makedirs(args.config_dir, exist_ok=True)
     save_pickle({"weight": best_params}, os.path.join(args.config_dir, f"{args.dataset}_exweight_{args.seed}.pkl"))
     print("Best parameters saved!")
     return best_params
@@ -76,7 +76,7 @@ def hyperopt_search(args, data_train, data_val):
     objective_func = partial(objective, args=args, data_train=data_train, data_val=data_val)
     best = fmin(objective_func, space, algo=tpe.suggest, max_evals=args.max_evals, trials=trials, early_stop_fn=no_progress_loss(args.hpt_patience), rstate=np.random.default_rng(args.seed))
     print(f"Best parameters: {best}")
-    # save best parameters
+    os.makedirs(args.config_dir, exist_ok=True)
     config_path = os.path.join(args.config_dir, f"{args.dataset}_{args.seed}.pkl")
     save_pickle(best, config_path)
     print(f"Best parameters saved at {config_path}!")

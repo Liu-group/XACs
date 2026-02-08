@@ -74,7 +74,7 @@ def load_checkpoint(current_args: Namespace, checkpoint_path: Optional[str] = No
     if checkpoint_path is None:
         checkpoint_path = os.path.join(current_args.model_dir, current_args.dataset, f'{current_args.dataset}_{current_args.loss}_model_{current_args.seed}.pt')
     assert os.path.exists(checkpoint_path), f"Checkpoint {checkpoint_path} not found"
-    print(f"Loading model from {checkpoint_path}")
+    print(f"Loading model from {checkpoint_path}", flush=True)
     if current_args.gpu is not None:
         state = torch.load(checkpoint_path)
     else:
@@ -97,21 +97,25 @@ def load_checkpoint(current_args: Namespace, checkpoint_path: Optional[str] = No
     if not hasattr(args, 'embed_method'):
         current_args.embed_method = 'linear'
     
-    # Build model
-    model = GNN(num_node_features=current_args.num_node_features, 
-                num_edge_features=current_args.num_edge_features,
-                node_hidden_dim=current_args.node_hidden_dim,
-                edge_hidden_dim=current_args.edge_hidden_dim,
-                num_classes=current_args.num_classes,
-                conv_name=current_args.conv_name,
-                num_layers=current_args.num_layers,
-                hidden_dim=current_args.hidden_dim,
-                dropout_rate=current_args.dropout_rate,
-                pool='mean',
-                heads=current_args.heads,
-                embed_method=current_args.embed_method,
-                att_method=current_args.att_method,
-                deg=current_args.deg if hasattr(current_args, 'deg') else None
+    # Build model using saved args to ensure architecture matches exactly
+    # Use saved args for model construction to ensure exact match with training
+    model = GNN(num_node_features=args.num_node_features, 
+                num_edge_features=args.num_edge_features,
+                node_hidden_dim=args.node_hidden_dim if hasattr(args, 'node_hidden_dim') else args.hidden_dim,
+                edge_hidden_dim=args.edge_hidden_dim if hasattr(args, 'edge_hidden_dim') else args.hidden_dim,
+                num_classes=args.num_classes,
+                conv_name=args.conv_name,
+                num_layers=args.num_layers,
+                hidden_dim=args.hidden_dim,
+                dropout_rate=args.dropout_rate,
+                pool=args.pool if hasattr(args, 'pool') else 'mean',  # Use saved pool value, not hardcoded
+                heads=args.heads if hasattr(args, 'heads') else 1,
+                uncom_pool=args.uncom_pool if hasattr(args, 'uncom_pool') else 'add',  # Include uncom_pool
+                embed_method=args.embed_method if hasattr(args, 'embed_method') else 'linear',
+                att_method=args.att_method if hasattr(args, 'att_method') else None,
+                attribute_to_last_layer=args.attribute_to_last_layer if hasattr(args, 'attribute_to_last_layer') else True,
+                normalize_att=args.normalize_att if hasattr(args, 'normalize_att') else False,
+                deg=args.deg if hasattr(args, 'deg') else None
                 )
     model.load_state_dict(model_state_dict)
     return model

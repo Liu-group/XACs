@@ -10,3 +10,7 @@ hyperopt
 Levenshtein
 deepchem
 captum
+matplotlib
+scipy
+seaborn
+cairosvg

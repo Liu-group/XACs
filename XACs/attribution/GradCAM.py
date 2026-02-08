@@ -29,11 +29,13 @@ class GraphLayerGradCam(ca.LayerGradCam):
             self,
             forward_func: Callable,
             layer: Module,
+            weighted_gradients: bool = False,
             device_ids: Union[None, List[int]] = None,
             training: bool = False,
     ) -> None:
         super().__init__(forward_func, layer, device_ids)
-
+        self.weighted_gradients = weighted_gradients
+        
     def attribute(
             self,
             inputs: Union[Tensor, Tuple[Tensor, ...]],
@@ -60,6 +62,16 @@ class GraphLayerGradCam(ca.LayerGradCam):
             attribute_to_layer_input=attribute_to_layer_input,
         )
         undo_gradient_requirements(inputs, gradient_mask)
+        # obtain per-channel weights by averaging gradients over nodes/pixels
+        if self.weighted_gradients:
+            weights = tuple(
+                torch.mean(layer_gradient, dim=0) for layer_gradient in layer_gradients
+            )
+            layer_gradients = tuple(
+                weight.reshape(1, -1).expand_as(layer_gradient)
+                for layer_gradient, weight in zip(layer_gradients, weights)
+            )   
+
         attributions = tuple(
                             torch.einsum("ij, ij -> i", layer_evals, layer_gradients) 
                             for layer_evals, layer_gradients in zip(layer_evals, layer_gradients))

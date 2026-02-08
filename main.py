@@ -15,8 +15,15 @@ import json
 
 if __name__ == '__main__':
     args = get_args()
-    dataset = MoleculeDataset(args.dataset, args.data_dir)   
-    dataset.get_cliffs(args.sim_struct if args.sim_struct== 'mmp' else (args.sim_struct, args.sim_threshold), args.dist_threshold)
+    dataset = MoleculeDataset(args.dataset, args.data_dir)
+    # If a CSV path is provided, use the dataset name for output directories.
+    if os.path.exists(args.dataset):
+        args.dataset = dataset.dataset_name
+    dataset.get_cliffs(
+        args.sim_struct if args.sim_struct== 'mmp' else (args.sim_struct, args.sim_threshold),
+        args.dist_threshold,
+        dict_path=args.dict_path
+    )
     args.num_node_features=dataset.num_node_features
     args.num_edge_features=dataset.num_edge_features 
     args.minimize_score = args.metric[0].lower().startswith('rmse') or args.metric[0].lower().startswith('mae')
@@ -45,8 +52,12 @@ if __name__ == '__main__':
                 setattr(current_args, arg, space_eval(param_space, best_params)[arg])
                 print(f"{arg}: {getattr(current_args, arg)}")
                 
+        # Store original unpacked data for ensemble training
+        data_train_unpacked = data_train
+        data_val_unpacked = data_val
+        
         if args.loss != 'MSE':
-            data_train = pack_data(data_train, dataset.cliff_dict)
+            data_train = pack_data(data_train, dataset.cliff_dict, pair_cap=current_args.pair_cap)
             if args.use_opt_xweight:
                 config_file_exweight = os.path.join(args.config_dir, f"{args.dataset}_exweight_{current_args.seed}.pkl")
                 if os.path.exists(config_file_exweight):
@@ -65,19 +76,21 @@ if __name__ == '__main__':
         print("current_args:", current_args)
         current_args.save_checkpoints = True
         if args.ensemble:
+            # For ensemble CV training, use train+val to mimic bagging on the full training split.
+            data_train_cv = data_train_unpacked + data_val_unpacked
             models = []
             for i, metric in enumerate(args.metric):
                 for j in range(5):
                     checkpoint_path = os.path.join(args.model_dir, args.dataset, 
-                                                        f'{args.dataset}_{args.loss}_model_{(init_seed + fold_num) * 10 + j}_{metric}.pt')
+                                                        f'{args.dataset}_{args.loss}_model_{current_args.seed * 10 + j}_{metric}.pt')
                     if args.save_checkpoints and os.path.exists(checkpoint_path):
                         best_model = load_checkpoint(current_args, checkpoint_path)
                     else:
                         print(f"Warning: Checkpoint not found, start training...")
-                        run_cv_train(current_args, data_train)
+                        run_cv_train(current_args, data_train_cv, dataset)
                         best_model = load_checkpoint(current_args, checkpoint_path)
                     models.append(best_model)
-                fold_scores = run_evaluation_ensemble(current_args, dataset, data_test, models, metric, xeval=True if i == 0 else False)
+                fold_scores = run_evaluation_ensemble(current_args, dataset, data_test, models, metric, xeval=current_args.xeval if i == 0 else False)
                 for key, value in fold_scores.items():
                     all_scores[key].append(value)
         else:
@@ -90,7 +103,7 @@ if __name__ == '__main__':
                     print(f"Warning: Checkpoint not found, start training...")
                     run_training(current_args, data_train, data_val)
                     model = load_checkpoint(current_args, check_point_path)
-                fold_scores = run_evaluation(current_args, dataset, data_test, model, metric, xeval=True if i == 0 else False)
+                fold_scores = run_evaluation(current_args, dataset, data_test, model, metric, xeval=current_args.xeval if i == 0 else False)
                 for key, value in fold_scores.items():
                     all_scores[key].append(value)
     # Report scores for each fold

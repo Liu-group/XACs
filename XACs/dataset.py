@@ -1,6 +1,5 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.cluster import SpectralClustering
 import pandas as pd
 from tqdm import tqdm
 import os
@@ -12,6 +11,7 @@ from XACs.featurization import MolTensorizer
 from XACs.cliffs import ActivityCliffs, get_tanimoto_matrix
 from XACs.utils.const import DATASETS, MOLDATASETS
 import torch
+import deepchem as dc
 
 class MoleculeDataset:
     def __init__(
@@ -23,6 +23,9 @@ class MoleculeDataset:
         """
 
         if os.path.exists(file):
+            # If a direct CSV path is provided, remember its location for outputs (e.g., mcs_dict).
+            self.dataset_name = os.path.splitext(os.path.basename(file))[0]
+            self.working_path = os.path.dirname(os.path.abspath(file)) or "."
             df = pd.read_csv(file)     
         else:
             self.dataset_name = file
@@ -37,20 +40,28 @@ class MoleculeDataset:
 
         self.smiles_all = df['smiles'].tolist()
         self.y_all = df['y'].tolist()
-        self.task_type = 'regression' if np.unique(self.y_all).shape[0] > 10 else 'classification'
         self.cliff_mols = None
 
         self.featurize_data()
         
-    def get_cliffs(self, struct_sim: Union[Tuple[str, float], str, None] = ('combined', 0.9), dist_thre: float = 1.0):
+    def get_cliffs(self,
+                   struct_sim: Union[Tuple[str, float], str, None] = ('combined', 0.9),
+                   dist_thre: float = 1.0,
+                   dict_path: Optional[str] = None):
+        """
+        Load an existing cliff dictionary if provided/available; otherwise generate.
+        - If dict_path is given, use it directly.
+        - Else, build the default path from struct_sim/dist_thre (same as before).
+        """
         descriptor = struct_sim[0] if isinstance(struct_sim, tuple) else struct_sim
         sim_thre = struct_sim[1] if isinstance(struct_sim, tuple) else None
-        if descriptor == 'default_mcs':
-            dict_path = os.path.join(self.working_path, f'mcs_dict_{sim_thre}_default.pkl' if dist_thre==1.0 else f'mcs_dict_{sim_thre}_{dist_thre}_default.pkl')
-        elif descriptor == 'mmp':
-            dict_path = os.path.join(self.working_path, f'mcs_dict_mmp.pkl' if dist_thre==1.0 else f'mcs_dict_{dist_thre}_mmp.pkl')
-        else:
-            dict_path = os.path.join(self.working_path, f'mcs_dict_{sim_thre}.pkl' if dist_thre==1.0 else f'mcs_dict_{sim_thre}_{dist_thre}.pkl')
+        if dict_path is None:
+            if descriptor == 'default_mcs':
+                dict_path = os.path.join(self.working_path, f'mcs_dict_{sim_thre}_default.pkl' if dist_thre==1.0 else f'mcs_dict_{sim_thre}_{dist_thre}_default.pkl')
+            elif descriptor == 'mmp':
+                dict_path = os.path.join(self.working_path, f'mcs_dict_mmp.pkl' if dist_thre==1.0 else f'mcs_dict_{dist_thre}_mmp.pkl')
+            else:
+                dict_path = os.path.join(self.working_path, f'mcs_dict_{sim_thre}.pkl' if dist_thre==1.0 else f'mcs_dict_{sim_thre}_{dist_thre}.pkl')
         self.cliff = ActivityCliffs(self.smiles_all, 
                                     self.y_all,
                                     struct_sim=struct_sim, 
@@ -78,13 +89,12 @@ class MoleculeDataset:
             df = pd.read_csv(split_path)
             train_idx, val_idx, test_idx = df[df['split'] == 'train'].index.tolist(), df[df['split'] == 'val'].index.tolist(), df[df['split'] == 'test'].index.tolist()
         elif split_method == 'random':
-            train_idx, test_idx = train_test_split(range(len(self.smiles_all)), test_size=split_ratio[2], random_state=seed, stratify=self.y_all if self.task_type == 'classification' else None)
-            train_idx, val_idx = train_test_split(train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]), random_state=seed, stratify=[self.y_all[i] for i in train_idx] if self.task_type == 'classification' else None)
+            train_idx, test_idx = train_test_split(range(len(self.smiles_all)), test_size=split_ratio[2], random_state=seed)
+            train_idx, val_idx = train_test_split(train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]), random_state=seed)
         elif split_method == 'cliff':
             assert self.cliff_mols is not None, "No cliff information available"
             train_idx, val_idx, test_idx = cliff_split(self.smiles_all, self.y_all, self.cliff_mols, split_ratio=split_ratio, n_clusters=n_clusters, seed=seed)
         elif split_method == 'scaffold':
-            import deepchem as dc
             pseudo_dataset = dc.data.DiskDataset.from_numpy(X=np.zeros((len(self.smiles_all))), y=np.zeros(len(self.smiles_all)), ids=self.smiles_all)
             scaffoldsplitter = dc.splits.ScaffoldSplitter()
             train_idx, val_idx, test_idx = scaffoldsplitter.split(pseudo_dataset, seed=seed, frac_train=split_ratio[0], frac_valid=split_ratio[1], frac_test=split_ratio[2])
@@ -104,22 +114,15 @@ class MoleculeDataset:
                     raise ValueError(f"Can't find molecule {i} in train, val or test")
             df = pd.DataFrame({'smiles': self.smiles_all,
                             'y': self.y_all,
-                            #'cliff_mol': self.cliff_mols,
+                            'cliff_mol': self.cliff_mols,
                             'split': split})
             df.to_csv(split_path, index=False)
             print(f"Saved split to {split_path}")
     
         if return_idx == True:
-            if split_ratio[1] == 0:
-                return train_idx, test_idx
-            else:   
-                return train_idx, val_idx, test_idx 
+            return train_idx, val_idx, test_idx
         else:
-            if split_ratio[1] == 0:
-                data_train, data_test = [self.data_all[i] for i in train_idx], [self.data_all[i] for i in test_idx]
-                return data_train, data_test
-            else:
-                data_train, data_val, data_test = [self.data_all[i] for i in train_idx], [self.data_all[i] for i in val_idx], [self.data_all[i] for i in test_idx]
+            data_train, data_val, data_test = [self.data_all[i] for i in train_idx], [self.data_all[i] for i in val_idx], [self.data_all[i] for i in test_idx]
             return data_train, data_val, data_test
 
     def featurize_data(self):
@@ -134,10 +137,11 @@ class MoleculeDataset:
             if self.cliff_mols is not None:
                 self.data_all[i].cliff = self.cliff_mols[i]
 
-def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None) -> Data:
+def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None, pair_cap: Optional[int] = None) -> Data:
     """
     Shape data.x from (num_node_of_mol_i, num_node_features) to (sum(num_node_of_mol_i, num_node_of_cliff_mols), num_node_features);
     data.edge_index and data.edge_attr are transformed into several disconnected graphs using Batch;
+    pair_cap optionally limits how many cliff pairs from cliff_dict are packed per anchor molecule to keep batch graphs tractable.
 
     atom_mask = [atom_mask_i, atom_mask_j] with shape (max_num_cliff_pairs_in_list, num_atom_i)
     e.g. 
@@ -149,8 +153,8 @@ def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None) -> Dat
     com_atom_mask_i = [[0, 0, 0, 1, 1, 1],
                        [1, 0, 0, 1, 1, 1],
                        [0, 0, 0, 0, 0, 0]]
-    meaning the first 3 atoms (first row) are the target attribution substructure of molecule i corresponding to the first cliff pair,
-    the 2rd and 3rd atoms (second row) are the target attribution substructure of molecule i corresponding to the second cliff pair;
+    meaning the first 3 atoms are the target attribution substrucutre of molecule i corresponding to the first cliff pair,
+    the 2rd and 3rd atoms are the target attribution substrucutre of molecule i corresponding to the second cliff pair;
 
     uncom_atom_mask_j = [[-1, 0, 0, 0],
                         [  0, 0, 0, 0],
@@ -165,8 +169,8 @@ def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None) -> Dat
     common_atom_mask_k = [[0,  0, 0, 0,  0, 0],
                         [-1,  0, -1, -1,  0, -1],
                         [0,  0, 0, 0,  0, 0]]
-    meaning the first atom is the uncommon attribution substructure of molecule j;
-    the 2rd and 5th atoms are the uncommon attribution substructure of molecule k;
+    meaning the first 3 atoms are the target attribution substrucutre of molecule j;
+    the 2rd and 5th atoms are the target attribution substrucutre of molecule k;
     uncom_atom_mask = [[1, 1, 1, 0, 0, 0, -1,  0,  0, 0, 0,  0, 0, 0,  0, 0],
                        [0, 1, 1, 0, 0, 0,  0,  0,  0, 0, 0, -1, 0, 0, -1, 0],
                        [0, 0, 0, 0, 0, 0,  0,  0,  0, 0, 0,  0, 0, 0,  0, 0]] 
@@ -186,17 +190,25 @@ def pack_data(data: Data, cliff_dict: dict, space: Optional[Data] = None) -> Dat
     packed_data = deepcopy(data)
 
     # Iterate through the values in the dictionary to check the maximum number of mmp for one molecule
+    # Apply pair_cap here so tensor sizes reflect any sampling that will occur later.
     max_length = 1
     for value in cliff_dict.values():
-        if len(value) > max_length:
-            max_length = len(value) - 1
+        num_pairs = max(len(value) - 1, 0)
+        if pair_cap is not None:
+            num_pairs = min(num_pairs, pair_cap)
+        if num_pairs > max_length:
+            max_length = num_pairs
 
-    for i in range(len(packed_data)):
+    print(f"Packing {len(packed_data)} molecules with max {max_length} cliff pairs each...", flush=True)
+    for i in tqdm(range(len(packed_data)), desc="Packing molecules"):
         smiles_i = str(smiles[i])
         num_atom_i = packed_data[i].x.size(0)
         # get the valid mmps that are in the train smiles list
         mmps = cliff_dict[smiles_i][1:]
         available_mmps = [mmp_dict for mmp_dict in mmps if mmp_dict['smiles'] in smiles_all]
+        # Cap the number of cliff pairs we keep for this anchor molecule to avoid huge batched graphs.
+        if pair_cap is not None and pair_cap > 0 and len(available_mmps) > pair_cap:
+            available_mmps = random.sample(available_mmps, pair_cap)
         num_av_mmp = len(available_mmps)
 
         potency_diff = torch.zeros(max_length, 1)
@@ -254,38 +266,36 @@ def cliff_split(smiles_all,
         """
         Split data into train/val/test according to activity cliffs. Adpated from "Exposing the Limitations of Molecular Machine Learning with Activity Cliffs"
         """
+        from sklearn.cluster import SpectralClustering
+
         # Perform spectral clustering on a tanimoto distance matrix
         spectral = SpectralClustering(n_clusters=n_clusters, random_state=seed, affinity='precomputed')
         clusters = spectral.fit(get_tanimoto_matrix(smiles_all)).labels_
         train_idx, val_idx, test_idx = [], [], []
         for cluster in range(n_clusters):
-            cluster_idx = np.where(clusters == cluster)[0]
-            clust_cliff_mols = [cliff_mols[i] for i in cluster_idx]
-            # Can only split stratiefied on cliffs if there are at least 3 cliffs present, else do it randomly
-            if sum(clust_cliff_mols) > 3:
-                clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
-                                                                random_state=seed,
-                                                                stratify=clust_cliff_mols, shuffle=True)
-                if split_ratio[1] > 0:
+                cluster_idx = np.where(clusters == cluster)[0]
+                clust_cliff_mols = [cliff_mols[i] for i in cluster_idx]
+                # Can only split stratiefied on cliffs if there are at least 3 cliffs present, else do it randomly
+                if sum(clust_cliff_mols) > 3:
+                    clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
+                                                                    random_state=seed,
+                                                                    stratify=clust_cliff_mols, shuffle=True)
                     clust_train_idx, clust_val_idx = train_test_split(clust_train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]),
                                                                     random_state=seed,
                                                                     stratify=[cliff_mols[i] for i in clust_train_idx], shuffle=True)
-            else:
-                clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
-                                                                random_state=seed,
-                                                                shuffle=True)
-                if split_ratio[1] > 0:
+                else:
+                    clust_train_idx, clust_test_idx = train_test_split(cluster_idx, test_size=split_ratio[2],
+                                                                    random_state=seed,
+                                                                    shuffle=True)
                     clust_train_idx, clust_val_idx = train_test_split(clust_train_idx, test_size=split_ratio[1]/(split_ratio[0]+split_ratio[1]),
                                                                     random_state=seed,
                                                                     shuffle=True)
-
-            train_idx.extend(clust_train_idx)
-            val_idx.extend(clust_val_idx if split_ratio[1] > 0 else [])
-            test_idx.extend(clust_test_idx)
+    
+                train_idx.extend(clust_train_idx)
+                val_idx.extend(clust_val_idx)
+                test_idx.extend(clust_test_idx)
 
         return train_idx, val_idx, test_idx
-
-
 
 
 

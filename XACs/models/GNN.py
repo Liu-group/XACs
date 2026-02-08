@@ -59,12 +59,12 @@ class GNN(torch.nn.Module):
             edge_lin = Lin(edge_hidden_dim*2, edge_hidden_dim)
             self.node_emb = Seq(node_ifp, node_lin, ReLU())
             self.edge_emb = Seq(edge_ifp, edge_lin, ReLU())
-            print("Using IFP")
+            #print("Using IFP")
         elif embed_method == 'linear':
             # use linear embedding
             self.node_emb = Lin(num_node_features, node_hidden_dim)
             self.edge_emb = Lin(num_edge_features, edge_hidden_dim)
-            print("Using linear embedding")
+            #print("Using linear embedding")
         else:
             # identity embedding
             self.node_emb = torch.nn.Identity()

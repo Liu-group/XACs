@@ -12,6 +12,7 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from sklearn.metrics import f1_score, accuracy_score
+from tqdm import tqdm
 
 def get_gradcam_att(model: GNN, graph: Data) -> torch.Tensor:
     with torch.no_grad():
@@ -250,8 +251,8 @@ def run_evaluation(args, dataset, data_test, model, metric, xeval=False):
         print("attribution_score: ", attribution_score)
         for key, value in attribution_score.items():
             scores[key] = value
-    data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)    
-    test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
+    data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all, pair_cap=args.pair_cap)    
+    test_loader = DataLoader(data_test, batch_size=args.batch_size, shuffle=False)
 
     y_pred, y_true, cliffs = predict(args, model, test_loader, loss_func, device)
     scores[f"test_{metric}"] = metric_funcs(y_true, torch.sigmoid(y_pred) if args.task == 'classification' else y_pred)
@@ -273,36 +274,43 @@ def run_evaluation_ensemble(args, dataset: MoleculeDataset, data_test: Data, mod
     Runs evaluation for an ensemble of models.
     Returns a dictionary of all scores.
     """
+    print(f"Starting run_evaluation_ensemble with xeval={xeval}, {len(models)} models", flush=True)
     for model in models:
         model.eval()
     metric_funcs = get_metric_func(metric=metric)
     all_scores = collections.defaultdict(list)
     if xeval:
+        print(f"Running explanation evaluation...", flush=True)
         attribution_score, _ = evaluate_gnn_explain_direction_ensemble(args, dataset, data_test, models)
         for key, value in attribution_score.items():
             all_scores[key] = value
-    data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all)    
+    print(f"Packing test data (this may take a while for large datasets)...", flush=True)
+    data_test = pack_data(data_test, dataset.cliff_dict, space=dataset.data_all, pair_cap=args.pair_cap)
     y_preds, y_trues = [], []
-    test_loader = DataLoader(data_test, batch_size = 1, shuffle=False)
+    test_loader = DataLoader(data_test, batch_size=args.batch_size, shuffle=False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     loss_func = torch.nn.MSELoss() if args.task == 'regression' else torch.nn.BCEWithLogitsLoss()
     for j in range(5):
+        print(f"Running prediction for model {j+1}/5...", flush=True)
         model = models[j]
         model.to(device)
         y_pred, y_true, cliffs = predict(args, model, test_loader, loss_func, device)
         y_preds.append(y_pred)
         y_trues.append(y_true)
+    print(f"All predictions completed, computing ensemble metrics...", flush=True)
     y_preds = torch.cat(y_preds, dim=1)
     y_trues = torch.cat(y_trues, dim=1)
     y_ensemble_pred = torch.mean(y_preds, dim=1)
-    y_ensemble_true = torch.mean(y_trues, dim=1)
+    # Ground truth is the same for all models, use first one (don't average)
+    y_ensemble_true = y_trues[:, 0]
     cliffs = np.array([cliffs[i].item() for i in range(len(cliffs))])
     y_ensemble_pred_cliff = y_ensemble_pred[cliffs==1]
     y_ensemble_true_cliff = y_ensemble_true[cliffs==1]
     all_scores[f"test_{metric}"] = metric_funcs(y_ensemble_true, y_ensemble_pred)
-    print('test {:.4s}: {:.3f}'.format(metric, all_scores[f"test_{metric}"]))
+    print('test {:.4s}: {:.3f}'.format(metric, all_scores[f"test_{metric}"]), flush=True)
     all_scores[f"test_cliff_{metric}"] = metric_funcs(y_ensemble_true_cliff, y_ensemble_pred_cliff)
-    print('test cliff {:.4s}: {:.3f}'.format(metric, all_scores[f"test_cliff_{metric}"]))  
+    print('test cliff {:.4s}: {:.3f}'.format(metric, all_scores[f"test_cliff_{metric}"]), flush=True)
+    print(f"run_evaluation_ensemble completed!", flush=True)
     return all_scores
         
 
@@ -321,10 +329,12 @@ def evaluate_gnn_explain_direction_ensemble(args, dataset: MoleculeDataset, data
     featurizer = MolTensorizer()
     print("Evaluating feature attributions for ensemble...")
     
-    for smi in smiles_test:
+    # Count total cliff molecules for progress tracking
+    cliff_molecules = [smi for smi in smiles_test if cliff_dict[smi][0]['is_cliff_mol']]
+    print(f"Processing {len(cliff_molecules)} cliff molecules with ensemble of {len(models)} models...")
+    
+    for smi_idx, smi in enumerate(tqdm(cliff_molecules, desc="Computing attributions")):
         mmp_dicts = cliff_dict[smi]
-        if mmp_dicts[0]['is_cliff_mol']==False:
-            continue
         graph_i = featurizer.tensorize(smi).to('cpu')
         
         # Get attributions from each model in the ensemble
@@ -334,7 +344,8 @@ def evaluate_gnn_explain_direction_ensemble(args, dataset: MoleculeDataset, data
         ensemble_ig_att_i = []
         ensemble_attention_i = []
         
-        for model in models:
+        # Compute attributions for graph_i using each model in ensemble
+        for model_idx, model in enumerate(models):
             if model.conv_name == 'gat':
                 ensemble_attention_i.append(get_attention_score(model, graph_i))
             ensemble_smoothgrad_att_i.append(get_smoothgrad_att(model, graph_i))
@@ -350,7 +361,8 @@ def evaluate_gnn_explain_direction_ensemble(args, dataset: MoleculeDataset, data
         if model.conv_name == 'gat':
             attention_i = torch.mean(torch.stack(ensemble_attention_i), dim=0)
         
-        for mmp_dict in mmp_dicts[1:]:
+        # Process each MMP pair for this cliff molecule
+        for pair_idx, mmp_dict in enumerate(mmp_dicts[1:]):
             num_pairs += 1
             diff = mmp_dict['potency_diff']
             mmp_smi = mmp_dict['smiles']
@@ -366,7 +378,8 @@ def evaluate_gnn_explain_direction_ensemble(args, dataset: MoleculeDataset, data
             ensemble_ig_att_j = []
             ensemble_attention_j = []
             
-            for model in models:
+            # Compute attributions for graph_j using each model in ensemble
+            for model_idx, model in enumerate(models):
                 if model.conv_name == 'gat':
                     ensemble_attention_j.append(get_attention_score(model, graph_j))
                 ensemble_smoothgrad_att_j.append(get_smoothgrad_att(model, graph_j))
